@@ -1,0 +1,143 @@
+services:
+  # User Service Database
+  user_db:
+    image: postgres:15-alpine
+    container_name: user_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: user_service_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - user_db_data:/var/lib/postgresql/data
+      - ./services/user-service/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hdv-network
+
+  # User Service
+  user-service:
+    build: ./services/user-service
+    container_name: user-service
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: user_db
+      DB_PORT: 5432
+      DB_NAME: user_service_db
+      NODE_ENV: development
+    depends_on:
+      user_db:
+        condition: service_healthy
+    volumes:
+      - ./services/user-service:/app
+      - /app/node_modules
+    networks:
+      - hdv-network
+
+  # Product Service Database
+  product_db:
+    image: postgres:15-alpine
+    container_name: product_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: product_service_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - product_db_data:/var/lib/postgresql/data
+      - ./services/product-service/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hdv-network
+
+  # Product Service
+  product-service:
+    build: ./services/product-service
+    container_name: product-service
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: product_db
+      DB_PORT: 5432
+      DB_NAME: product_service_db
+      NODE_ENV: development
+    depends_on:
+      product_db:
+        condition: service_healthy
+    volumes:
+      - ./services/product-service:/app
+      - /app/node_modules
+    networks:
+      - hdv-network
+
+  # Order Service Database
+  order_db:
+    image: postgres:15-alpine
+    container_name: order_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: order_service_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - order_db_data:/var/lib/postgresql/data
+      - ./services/order-service/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hdv-network
+
+  # Order Service
+  order-service:
+    build: ./services/order-service
+    container_name: order-service
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: order_db
+      DB_PORT: 5432
+      DB_NAME: order_service_db
+      NODE_ENV: development
+      PRODUCT_SERVICE_URL: http://product-service:3002
+      USER_SERVICE_URL: http://user-service:3001
+    depends_on:
+      order_db:
+        condition: service_healthy
+    volumes:
+      - ./services/order-service:/app
+      - /app/node_modules
+    networks:
+      - hdv-network
+
+volumes:
+  user_db_data:
+  product_db_data:
+  order_db_data:
+
+networks:
+  hdv-network:
+    driver: bridge
