@@ -23,7 +23,11 @@ const handleError = (error, res, statusCode = 500) => {
 // Hàm tiện ích tạo Token
 const generateToken = (user) => {
     return jwt.sign(
-        { id: user.id, email: user.email },
+        {
+            id: user.id,
+            email: user.email,
+            role: user.role || 'user'
+        },
         process.env.JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
@@ -89,32 +93,58 @@ exports.registerUser = async (req, res) => {
 };
 
 // Login
+// Login
 exports.loginUser = async (req, res) => {
     try {
         const { email, password } = req.body;
+
         if (!email || !password) {
-            return res.status(400).json({ success: false, error: 'Email and password are required' });
+            return res.status(400).json({
+                success: false,
+                error: 'Vui lòng nhập đầy đủ Email và Mật khẩu'
+            });
         }
 
-        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+        const userQuery = `
+            SELECT u.*, r.name as role 
+            FROM users u
+            LEFT JOIN user_roles ur ON u.id = ur.user_id
+            LEFT JOIN roles r ON ur.role_id = r.id
+            WHERE u.email = $1
+        `;
+
+        const result = await pool.query(userQuery, [email]);
+
         if (result.rows.length === 0) {
-            return res.status(401).json({ success: false, error: 'Invalid email or password' });
+            return res.status(401).json({
+                success: false,
+                error: 'Email hoặc mật khẩu không đúng'
+            });
         }
 
         const user = result.rows[0];
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) {
-            return res.status(401).json({ success: false, error: 'Email hoặc mật khẩu không đúng' });
+            return res.status(401).json({
+                success: false,
+                error: 'Email hoặc mật khẩu không đúng'
+            });
         }
-
+        const token = generateToken(user);
         res.json({
             success: true,
+            message: 'Đăng nhập thành công',
             data: {
-                user: { id: user.id, name: user.name, email: user.email },
-                token: generateToken(user)
-            },
-            message: 'Login successful'
+                user: {
+                    id: user.id,
+                    name: user.name,
+                    email: user.email,
+                    role: user.role || 'user'
+                },
+                token
+            }
         });
+
     } catch (error) {
         handleError(error, res);
     }

@@ -31,3 +31,50 @@ exports.getArticles = async (req, res) => {
         res.status(500).json({ success: false, error: error.message });
     }
 };
+
+exports.deleteArticle = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const result = await pool.query('DELETE FROM articles WHERE id = $1 RETURNING *', [id]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, error: 'Không tìm thấy bài viết' });
+        }
+
+        res.json({ success: true, message: 'Xóa bài viết thành công' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// @desc    Tạo danh mục bài viết mới
+// @route   POST /api/articles/categories
+exports.createCategory = async (req, res) => {
+    try {
+        const { name, description } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ success: false, error: 'Tên danh mục là bắt buộc' });
+        }
+
+        const result = await pool.query(
+            'INSERT INTO article_categories (name, description) VALUES ($1, $2) RETURNING *',
+            [name, description]
+        );
+
+        res.status(201).json({ success: true, data: result.rows[0] });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// @desc    Lấy tất cả danh mục
+exports.getCategories = async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM article_categories ORDER BY name ASC');
+        res.json({ success: true, data: result.rows });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};

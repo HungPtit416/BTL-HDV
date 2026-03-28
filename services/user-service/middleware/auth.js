@@ -37,4 +37,17 @@ const protect = async (req, res, next) => {
     }
 };
 
-module.exports = { protect };
+// Kiểm tra quyền truy cập
+const authorize = (...roles) => {
+    return (req, res, next) => {
+        if (!roles.includes(req.user.role)) {
+            return res.status(403).json({
+                success: false,
+                error: `Quyền hạn '${req.user.role}' không thể thực hiện hành động này.`
+            });
+        }
+        next();
+    };
+};
+
+module.exports = { protect, authorize };
