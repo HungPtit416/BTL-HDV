@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
 const userRoutes = require('./routes/userRoutes');
+const articleRoutes = require('./routes/articleRoutes');
+const wishlistRoutes = require('./routes/wishlistRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -14,7 +16,9 @@ app.get('/health', (req, res) => res.json({
   timestamp: new Date().toISOString()
 }));
 
-app.use('/api/users', userRoutes);
+app.use('/api/users', userRoutes);      // Auth, Profile
+app.use('/api/articles', articleRoutes); // Tin tức, bài viết
+app.use('/api/wishlist', wishlistRoutes); // Yêu thích
 
 app.use((err, req, res, next) => {
   console.error('SERVER ERROR LOG:', err.stack);
