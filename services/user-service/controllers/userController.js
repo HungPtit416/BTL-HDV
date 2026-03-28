@@ -1,6 +1,8 @@
 const pool = require('../db');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const sendEmail = require('../utils/sendEmail');
+const crypto = require('crypto');
 
 // Error logging helper (Giữ lại để dùng nội bộ trong controller)
 const handleError = (error, res, statusCode = 500) => {
@@ -147,5 +149,33 @@ exports.loginUser = async (req, res) => {
 
     } catch (error) {
         handleError(error, res);
+    }
+};
+
+exports.forgotPassword = async (req, res) => {
+    try {
+        const { email } = req.body;
+        const user = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+
+        if (user.rows.length === 0) {
+            return res.status(404).json({ success: false, error: 'Email không tồn tại' });
+        }
+
+        // Tạo Token ngẫu nhiên (Reset Token)
+        const resetToken = crypto.randomBytes(20).toString('hex');
+
+        // Gửi Email
+        const resetUrl = `http://localhost:3000/resetpassword/${resetToken}`;
+        const message = `Bạn nhận được email này vì bạn (hoặc ai đó) đã yêu cầu thay đổi mật khẩu. Vui lòng nhấn vào link: \n\n ${resetUrl}`;
+
+        await sendEmail({
+            email: email,
+            subject: 'Khôi phục mật khẩu - HDV Shop',
+            message: message
+        });
+
+        res.json({ success: true, message: 'Email khôi phục đã được gửi' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: 'Không thể gửi email' });
     }
 };
