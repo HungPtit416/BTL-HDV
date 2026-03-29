@@ -4,8 +4,7 @@
 CREATE TABLE IF NOT EXISTS brands (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    description TEXT,
-    logo_url VARCHAR(255),
+    weight DECIMAL(10, 2),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -13,8 +12,7 @@ CREATE TABLE IF NOT EXISTS brands (
 CREATE TABLE IF NOT EXISTS categories (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    description TEXT,
-    parent_id INTEGER REFERENCES categories(id),
+    weight DECIMAL(10, 2),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -23,8 +21,10 @@ CREATE TABLE IF NOT EXISTS products (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     description TEXT,
-    price DECIMAL(10, 2) NOT NULL,
+    import_price DECIMAL(10, 2) NOT NULL,
+    selling_price DECIMAL(10, 2) NOT NULL,
     quantity INTEGER DEFAULT 0,
+    color VARCHAR(100),
     category_id INTEGER REFERENCES categories(id),
     brand_id INTEGER REFERENCES brands(id),
     image_url VARCHAR(255),
@@ -78,17 +78,17 @@ CREATE INDEX IF NOT EXISTS idx_inventory_product_id ON inventory(product_id);
 CREATE INDEX IF NOT EXISTS idx_inventory_logs_product_id ON inventory_logs(product_id);
 
 -- Seed Categories
-INSERT INTO categories (name, description) VALUES
-('Rackets', 'Badminton rackets and paddles'),
-('Shuttlecocks', 'Badminton shuttlecocks and birdies'),
-('Nets', 'Badminton nets and accessories'),
-('Apparel', 'Badminton clothing and shoes'),
-('Bags', 'Sports bags and carrying cases');
+INSERT INTO categories (name, weight) VALUES
+('Rackets', 0.5),
+('Shuttlecocks', 0.1),
+('Nets', 2.0),
+('Apparel', 0.3),
+('Bags', 0.8);
 
 -- Seed Brands
-INSERT INTO brands (name, description) VALUES
-('Yonex', 'Professional badminton equipment manufacturer'),
-('Victor', 'High quality sports equipment brand'),
-('Lining', 'Chinese sports brand'),
-('Carlton', 'British badminton brand'),
-('Ashaway', 'Racket string and equipment brand');
+INSERT INTO brands (name, weight) VALUES
+('Yonex', 0.4),
+('Victor', 0.4),
+('Lining', 0.4),
+('Carlton', 0.4),
+('Ashaway', 0.3);
