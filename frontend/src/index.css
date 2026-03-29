@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;600;700&display=swap');
+
+body {
+  font-family: 'Lexend', sans-serif;
+  @apply text-gray-800 bg-gray-50;
+}
+
+/* Hiệu ứng trang trí vệt cam như trong mẫu */
+.bg-decoration {
+  background: linear-gradient(135deg, #ff6b00 10%, transparent 10%),
+              linear-gradient(225deg, #ff6b00 10%, transparent 10%);
+  background-size: 100px 100px;
+  background-position: 0 0, 100% 100%;
+  background-repeat: no-repeat;
+}

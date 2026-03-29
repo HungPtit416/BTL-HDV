@@ -133,6 +133,19 @@ services:
     networks:
       - hdv-network
 
+  frontend:
+    build: ./frontend
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_USER_SERVICE_URL=http://localhost:3001/api/users
+    networks:
+      - hdv-network
+
 volumes:
   user_db_data:
   product_db_data:
@@ -141,3 +154,5 @@ volumes:
 networks:
   hdv-network:
     driver: bridge
+
+
