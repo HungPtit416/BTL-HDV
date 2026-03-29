@@ -133,6 +133,94 @@ services:
     networks:
       - hdv-network
 
+  # Notification Service Database
+  notification_db:
+    image: postgres:15-alpine
+    container_name: notification_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: notification_service_db
+    ports:
+      - "5435:5432"
+    volumes:
+      - notification_db_data:/var/lib/postgresql/data
+      - ./services/notification-service/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hdv-network
+
+  # Notification Service
+  notification-service:
+    build: ./services/notification-service
+    container_name: notification-service
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: 3004
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: notification_db
+      DB_PORT: 5432
+      DB_NAME: notification_service_db
+      NODE_ENV: development
+    depends_on:
+      notification_db:
+        condition: service_healthy
+    volumes:
+      - ./services/notification-service:/app
+      - /app/node_modules
+    networks:
+      - hdv-network
+
+  # Payment Service Database
+  payment_db:
+    image: postgres:15-alpine
+    container_name: payment_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: payment_service_db
+    ports:
+      - "5436:5432"
+    volumes:
+      - payment_db_data:/var/lib/postgresql/data
+      - ./services/payment-service/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - hdv-network
+
+  # Payment Service
+  payment-service:
+    build: ./services/payment-service
+    container_name: payment-service
+    ports:
+      - "3005:3005"
+    environment:
+      PORT: 3005
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: payment_db
+      DB_PORT: 5432
+      DB_NAME: payment_service_db
+      NODE_ENV: development
+    depends_on:
+      payment_db:
+        condition: service_healthy
+    volumes:
+      - ./services/payment-service:/app
+      - /app/node_modules
+    networks:
+      - hdv-network
+
   frontend:
     build: ./frontend
     container_name: frontend
@@ -150,6 +238,8 @@ volumes:
   user_db_data:
   product_db_data:
   order_db_data:
+  notification_db_data:
+  payment_db_data:
 
 networks:
   hdv-network:
