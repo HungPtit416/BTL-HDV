@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS products (
     import_price DECIMAL(10, 2) NOT NULL,
     export_price DECIMAL(10, 2) NOT NULL,
     quantity INTEGER DEFAULT 0,
+    color VARCHAR(100),
     category_id INTEGER REFERENCES categories(id),
     brand_id INTEGER REFERENCES brands(id),
     image_url VARCHAR(255),

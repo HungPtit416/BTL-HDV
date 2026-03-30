@@ -155,7 +155,7 @@ app.post('/api/cart/add', async (req, res) => {
 // Create order / Checkout
 app.post('/api/orders/checkout', async (req, res) => {
   try {
-    const { user_id, items, total_amount, payment_method } = req.body;
+    const { user_id, items, total_amount } = req.body;
 
     if (!user_id || !items || items.length === 0 || !total_amount) {
       return res.status(400).json({
@@ -170,8 +170,8 @@ app.post('/api/orders/checkout', async (req, res) => {
 
     // Create order
     const orderResult = await pool.query(
-      'INSERT INTO orders (user_id, total_amount, vat_amount, final_total, payment_method, status, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
-      [user_id, total_amount, vat, final_total, payment_method || 'PENDING', 'PENDING']
+      'INSERT INTO orders (user_id, total_amount, vat_amount, final_total, status, created_at) VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING *',
+      [user_id, total_amount, vat, final_total, 'PENDING']
     );
 
     const order_id = orderResult.rows[0].id;
