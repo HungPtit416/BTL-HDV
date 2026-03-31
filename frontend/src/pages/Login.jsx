@@ -26,8 +26,8 @@ const Login = () => {
                 localStorage.setItem('token', response.data.data.token);
                 localStorage.setItem('user', JSON.stringify(response.data.data.user));
 
-                alert("Đăng nhập thành công!");
-                navigate('/'); // Chuyển về trang chủ
+                alert(`Chào mừng ${response.data.data.user.name} đã quay trở lại!`);
+                navigate('/');// Chuyển về trang chủ
             }
         } catch (error) {
             console.error("Lỗi đăng nhập:", error.response?.data);
