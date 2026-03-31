@@ -150,12 +150,16 @@ exports.forgotPassword = async (req, res) => {
             return res.status(404).json({ success: false, error: 'Email không tồn tại' });
         }
 
-        // Tạo Token ngẫu nhiên (Reset Token)
-        const resetToken = crypto.randomBytes(20).toString('hex');
+        // Tạo JWT chứa ID người dùng, hết hạn sau 10 phút
+        // Cách này KHÔNG cần lưu vào cột reset_token trong DB
+        const resetToken = jwt.sign(
+            { id: user.rows[0].id, type: 'reset' },
+            process.env.JWT_SECRET,
+            { expiresIn: '10m' }
+        );
 
-        // Gửi Email
         const resetUrl = `http://localhost:3000/resetpassword/${resetToken}`;
-        const message = `Bạn nhận được email này vì bạn (hoặc ai đó) đã yêu cầu thay đổi mật khẩu. Vui lòng nhấn vào link: \n\n ${resetUrl}`;
+        const message = `Link khôi phục mật khẩu (hết hạn sau 10 phút): \n\n ${resetUrl}`;
 
         await sendEmail({
             email: email,
@@ -165,6 +169,41 @@ exports.forgotPassword = async (req, res) => {
 
         res.json({ success: true, message: 'Email khôi phục đã được gửi' });
     } catch (error) {
-        res.status(500).json({ success: false, error: 'Không thể gửi email' });
+        console.error(error);
+        res.status(500).json({ success: false, error: 'Lỗi gửi email (Kiểm tra cấu hình Mailer)' });
+    }
+};
+
+exports.resetPassword = async (req, res) => {
+    try {
+        const { token } = req.params;
+        const { password } = req.body;
+
+        // 1. Giải mã token để lấy ID user
+        let decoded;
+        try {
+            decoded = jwt.verify(token, process.env.JWT_SECRET);
+        } catch (err) {
+            return res.status(400).json({ success: false, error: 'Link hết hạn hoặc không hợp lệ' });
+        }
+
+        // 2. Hash mật khẩu mới
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+
+        // 3. Cập nhật trực tiếp vào bảng users qua ID
+        const result = await pool.query(
+            'UPDATE users SET password = $1 WHERE id = $2 RETURNING id',
+            [hashedPassword, decoded.id]
+        );
+
+        if (result.rowCount === 0) {
+            return res.status(404).json({ success: false, error: 'Người dùng không tồn tại' });
+        }
+
+        res.json({ success: true, message: 'Mật khẩu đã được cập nhật thành công' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false, error: 'Lỗi server' });
     }
 };
