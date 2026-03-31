@@ -16,11 +16,10 @@ exports.createArticle = async (req, res) => {
     }
 };
 
-// @desc    Lấy danh sách bài viết
 exports.getArticles = async (req, res) => {
     try {
         const result = await pool.query(`
-            SELECT a.*, u.name as author_name, c.name as category_name 
+            SELECT a.*, u.name as author_name, u.avatar as author_avatar, c.name as category_name 
             FROM articles a
             LEFT JOIN users u ON a.author_id = u.id
             LEFT JOIN article_categories c ON a.category_id = c.id

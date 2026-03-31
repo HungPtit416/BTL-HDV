@@ -5,13 +5,7 @@ const pool = require('../db');
 exports.addToWishlist = async (req, res) => {
     try {
         const { product_id } = req.body;
-        const user_id = req.user.id; // Lấy từ token qua middleware protect
-
-        if (!product_id) {
-            return res.status(400).json({ success: false, error: 'Thiếu product_id' });
-        }
-
-        // Sử dụng ON CONFLICT DO NOTHING để tránh lỗi nếu user đã thích sản phẩm này rồi
+        const user_id = req.user.id;
         const result = await pool.query(
             `INSERT INTO wishlist (user_id, product_id) 
              VALUES ($1, $2) 
@@ -22,12 +16,10 @@ exports.addToWishlist = async (req, res) => {
 
         res.status(201).json({
             success: true,
-            message: result.rows.length > 0 ? 'Đã thêm vào yêu thích' : 'Sản phẩm đã có trong danh sách',
-            data: result.rows[0] || null
+            message: result.rowCount > 0 ? 'Đã thêm vào yêu thích' : 'Sản phẩm đã có trong danh sách'
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ success: false, error: 'Lỗi máy chủ' });
+        res.status(500).json({ success: false, error: 'Lỗi server' });
     }
 };
 
