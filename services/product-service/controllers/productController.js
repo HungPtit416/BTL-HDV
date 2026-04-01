@@ -1,6 +1,71 @@
 const pool = require('../db');
 const { validateProduct } = require('../utils/validators');
 
+const lockInventoryByOrderEvent = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const internalSecret = req.headers['x-internal-secret'];
+    const expectedSecret = process.env.ORDER_INTERNAL_SECRET || 'order_internal_secret_dev';
+
+    if (!internalSecret || internalSecret !== expectedSecret) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized internal request',
+      });
+    }
+
+    const { order_id, items } = req.body || {};
+    if (!order_id || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'order_id and non-empty items are required',
+      });
+    }
+
+    await client.query('BEGIN');
+
+    for (const item of items) {
+      const productId = Number(item.product_id);
+      const quantity = Number(item.quantity);
+
+      if (!Number.isInteger(productId) || productId <= 0 || !Number.isInteger(quantity) || quantity <= 0) {
+        throw new Error('Invalid product_id or quantity in items');
+      }
+
+      const updated = await client.query(
+        `UPDATE products
+         SET quantity = quantity - $1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2 AND quantity >= $1
+         RETURNING id, name, quantity`,
+        [quantity, productId]
+      );
+
+      if (updated.rows.length === 0) {
+        throw new Error(`Insufficient stock or product not found: product_id=${productId}`);
+      }
+    }
+
+    await client.query('COMMIT');
+
+    return res.status(201).json({
+      success: true,
+      message: 'Inventory locked successfully',
+      data: { order_id, locked_items: items.length },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error locking inventory:', error);
+    return res.status(409).json({
+      success: false,
+      error: error.message,
+    });
+  } finally {
+    client.release();
+  }
+};
+
 // Get all products with optional filters
 const getAllProducts = async (req, res) => {
   try {
@@ -334,5 +399,6 @@ module.exports = {
   updateProduct,
   deleteProduct,
   getProductsByCategory,
-  getProductsByBrand
+  getProductsByBrand,
+  lockInventoryByOrderEvent,
 };

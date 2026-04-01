@@ -13,15 +13,7 @@ const paymentRoutes = require('./routes/paymentRoutes');
 const app = express();
 
 app.use(cors());
-app.use(
-  express.json({
-    verify: (req, _res, buf) => {
-      if (req.originalUrl.includes('/api/payments/webhook/vietqr')) {
-        req.rawBody = buf.toString('utf8');
-      }
-    },
-  })
-);
+app.use(express.json());
 
 app.use(healthRoutes);
 app.use('/api', webhookRoutes);

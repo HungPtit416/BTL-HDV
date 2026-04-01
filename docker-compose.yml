@@ -78,6 +78,7 @@ services:
       DB_PORT: 5432
       DB_NAME: product_service_db
       NODE_ENV: development
+      ORDER_INTERNAL_SECRET: ${ORDER_INTERNAL_SECRET:-order_internal_secret_dev}
     depends_on:
       product_db:
         condition: service_healthy
@@ -170,6 +171,7 @@ services:
       DB_PORT: 5432
       DB_NAME: notification_service_db
       NODE_ENV: development
+      INTERNAL_EVENT_SECRET: ${ORDER_INTERNAL_SECRET:-order_internal_secret_dev}
     depends_on:
       notification_db:
         condition: service_healthy
@@ -214,18 +216,10 @@ services:
       DB_PORT: 5432
       DB_NAME: payment_service_db
       NODE_ENV: development
-      VIETQR_API_URL: https://api.vietqr.io/v2/generate
-      VIETQR_CLIENT_ID: ${VIETQR_CLIENT_ID:-}
-      VIETQR_API_KEY: ${VIETQR_API_KEY:-}
-      VIETQR_BANK_BIN: ${VIETQR_BANK_BIN:-970436}
-      VIETQR_BANK_ACCOUNT: ${VIETQR_BANK_ACCOUNT:-1858611282}
-      VIETQR_ACCOUNT_NAME: ${VIETQR_ACCOUNT_NAME:-NGUYEN TUAN HUNG}
-      QR_EXPIRE_MINUTES: ${QR_EXPIRE_MINUTES:-15}
-      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:-dev_webhook_secret}
-      PAYMENT_WEBHOOK_SIGNING_SECRET: ${PAYMENT_WEBHOOK_SIGNING_SECRET:-dev_webhook_secret}
-      PAYMENT_WEBHOOK_TOLERANCE_SECONDS: ${PAYMENT_WEBHOOK_TOLERANCE_SECONDS:-300}
       ORDER_SERVICE_URL: http://order-service:3003
       ORDER_INTERNAL_SECRET: ${ORDER_INTERNAL_SECRET:-order_internal_secret_dev}
+      INTERNAL_EVENT_SECRET: ${ORDER_INTERNAL_SECRET:-order_internal_secret_dev}
+      NOTIFICATION_SERVICE_URL: http://notification-service:3004
     depends_on:
       payment_db:
         condition: service_healthy
@@ -258,5 +252,3 @@ volumes:
 networks:
   hdv-network:
     driver: bridge
-
-

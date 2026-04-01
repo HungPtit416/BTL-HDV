@@ -1,8 +1,7 @@
 const axios = require('axios');
 const pool = require('../db');
-const { PAYMENT_SERVICE_URL } = require('../config/constants');
+const { PRODUCT_SERVICE_URL, PAYMENT_SERVICE_URL, ORDER_INTERNAL_SECRET } = require('../config/constants');
 const { handleError } = require('../middleware/errorHandler');
-const { sendOrderSuccessEmail } = require('../services/emailService');
 const {
   toPositiveInt,
   toPositiveNumber,
@@ -91,51 +90,62 @@ const checkout = async (req, res) => {
     await client.query('DELETE FROM cart_items WHERE cart_id = $1', [cart.id]);
     await client.query('COMMIT');
 
+    try {
+      await axios.post(
+        `${PRODUCT_SERVICE_URL}/api/products/events/order-created-lock`,
+        {
+          order_id: order.id,
+          items: itemsToInsert,
+        },
+        {
+          headers: {
+            'x-internal-secret': ORDER_INTERNAL_SECRET,
+          },
+          timeout: 10000,
+        }
+      );
+    } catch (inventoryError) {
+      await pool.query(
+        `UPDATE orders
+         SET status = $1,
+             updated_at = NOW()
+         WHERE id = $2`,
+        ['FAILED', order.id]
+      );
+
+      return res.status(409).json({
+        success: false,
+        error: 'Inventory lock failed',
+        details: inventoryError.response?.data?.error || inventoryError.message,
+      });
+    }
+
     let payment = null;
-    if (paymentMethod === 'QR') {
-      try {
-        const paymentResponse = await axios.post(
-          `${PAYMENT_SERVICE_URL}/api/payments/qr`,
-          {
-            order_id: order.id,
-            user_id: parsedUserId,
-            total_amount: finalAmount,
-            description: `Thanh toan don hang #${order.id}`,
+    try {
+      const paymentResponse = await axios.post(
+        `${PAYMENT_SERVICE_URL}/api/events/order-created`,
+        {
+          order_id: order.id,
+          user_id: parsedUserId,
+          total_amount: finalAmount,
+          payment_method: paymentMethod,
+          description:
+            paymentMethod === 'CASH'
+              ? `Thanh toan tien mat don hang #${order.id}`
+              : `Thanh toan don hang #${order.id}`,
+          user_email: req.user.email || null,
+        },
+        {
+          headers: {
+            'x-internal-secret': ORDER_INTERNAL_SECRET,
           },
-          {
-            headers: {
-              Authorization: req.headers.authorization,
-            },
-            timeout: 15000,
-          }
-        );
+          timeout: 15000,
+        }
+      );
 
-        payment = paymentResponse.data?.data || null;
-      } catch (paymentError) {
-        console.error('Create payment QR failed:', paymentError.message);
-      }
-    } else {
-      try {
-        const paymentResponse = await axios.post(
-          `${PAYMENT_SERVICE_URL}/api/payments/cash`,
-          {
-            order_id: order.id,
-            user_id: parsedUserId,
-            total_amount: finalAmount,
-            description: `Thanh toan tien mat don hang #${order.id}`,
-          },
-          {
-            headers: {
-              Authorization: req.headers.authorization,
-            },
-            timeout: 15000,
-          }
-        );
-
-        payment = paymentResponse.data?.data || null;
-      } catch (paymentError) {
-        console.error('Create cash payment failed:', paymentError.message);
-      }
+      payment = paymentResponse.data?.data || null;
+    } catch (paymentError) {
+      console.error('Create payment from ORDER_CREATED failed:', paymentError.message);
     }
 
     res.status(201).json({
@@ -147,15 +157,6 @@ const checkout = async (req, res) => {
         payment_method: paymentMethod,
         payment,
       },
-    });
-
-    sendOrderSuccessEmail({
-      toEmail: req.user.email,
-      orderId: order.id,
-      amount: finalAmount,
-      itemCount: itemsToInsert.length,
-    }).catch((mailError) => {
-      console.error('Send order success email failed:', mailError.message);
     });
   } catch (error) {
     await client.query('ROLLBACK');

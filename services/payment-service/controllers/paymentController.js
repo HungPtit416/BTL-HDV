@@ -4,17 +4,50 @@ const {
   listPaymentsByUser,
   getPaymentByIdAndUser,
   getPaymentsByOrderAndUser,
-  createQrPayment,
+  createVnpayPayment,
+  createPaymentByOrderEvent,
+  retryVnpayPaymentByOrder,
   createCashPayment,
   confirmPaymentPaid,
   cancelPayment,
-  processWebhook,
+  processVnpayCallback,
 } = require('../services/paymentService');
+
+const formatPaymentResponse = (payment) => {
+  if (!payment) return null;
+
+  const keepFields = [
+    'id',
+    'order_id',
+    'user_id',
+    'method',
+    'total_amount',
+    'status',
+    'transaction_id',
+    'provider',
+    'payment_url',
+    'customer_email',
+    'fail_reason',
+    'paid_at',
+    'created_at',
+    'updated_at',
+  ];
+
+  const formatted = {};
+  for (const key of keepFields) {
+    const value = payment[key];
+    if (value !== null && value !== undefined) {
+      formatted[key] = value;
+    }
+  }
+
+  return formatted;
+};
 
 const getAllPayments = async (req, res) => {
   try {
     const rows = await listPaymentsByUser(req.user.id);
-    return res.json({ success: true, data: rows });
+    return res.json({ success: true, data: (rows || []).map(formatPaymentResponse) });
   } catch (error) {
     return handleError(error, res);
   }
@@ -27,7 +60,7 @@ const getPaymentById = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Payment not found' });
     }
 
-    return res.json({ success: true, data: row });
+    return res.json({ success: true, data: formatPaymentResponse(row) });
   } catch (error) {
     return handleError(error, res);
   }
@@ -36,13 +69,34 @@ const getPaymentById = async (req, res) => {
 const getPaymentsByOrder = async (req, res) => {
   try {
     const rows = await getPaymentsByOrderAndUser(req.params.orderId, req.user.id);
-    return res.json({ success: true, data: rows });
+    return res.json({ success: true, data: (rows || []).map(formatPaymentResponse) });
   } catch (error) {
     return handleError(error, res);
   }
 };
 
-const generateQrPayment = async (req, res) => {
+const retryPaymentByOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const { payment } = await retryVnpayPaymentByOrder({
+      orderId,
+      userId: req.user.id,
+      description: req.body?.description,
+      ipAddr: req.ip,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Retry payment URL generated successfully',
+      data: formatPaymentResponse(payment),
+    });
+  } catch (error) {
+    return handleError(error, res, error.status || 500);
+  }
+};
+
+const generateVnpayPayment = async (req, res) => {
   try {
     const { order_id, user_id, total_amount, description } = req.body;
     const amount = toPositiveNumber(total_amount);
@@ -61,19 +115,51 @@ const generateQrPayment = async (req, res) => {
       });
     }
 
-    const { payment, qr } = await createQrPayment({
+    const { payment } = await createVnpayPayment({
       orderId: order_id,
       userId: user_id,
       amount,
       description,
       userEmail: req.user.email || null,
+      ipAddr: req.ip,
     });
 
     return res.status(201).json({
       success: true,
-      data: payment,
-      qr,
-      message: 'Payment QR generated successfully',
+      data: formatPaymentResponse(payment),
+      message: 'VNPAY payment URL generated successfully',
+    });
+  } catch (error) {
+    return handleError(error, res, error.status || 500);
+  }
+};
+
+const orderCreatedEvent = async (req, res) => {
+  try {
+    const { order_id, user_id, total_amount, payment_method, description, user_email } = req.body;
+    const amount = toPositiveNumber(total_amount);
+
+    if (!order_id || !user_id || !amount) {
+      return res.status(400).json({
+        success: false,
+        error: 'order_id, user_id and valid total_amount are required',
+      });
+    }
+
+    const { payment } = await createPaymentByOrderEvent({
+      orderId: order_id,
+      userId: user_id,
+      amount,
+      paymentMethod: payment_method,
+      description,
+      userEmail: user_email || null,
+      ipAddr: req.ip,
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: formatPaymentResponse(payment),
+      message: 'Payment created from ORDER_CREATED event',
     });
   } catch (error) {
     return handleError(error, res, error.status || 500);
@@ -109,7 +195,7 @@ const createCash = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      data: payment,
+      data: formatPaymentResponse(payment),
       message: 'Cash payment created successfully',
     });
   } catch (error) {
@@ -130,7 +216,11 @@ const confirmPayment = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Payment not found' });
     }
 
-    return res.json({ success: true, data: updated, message: 'Payment confirmed successfully' });
+    return res.json({
+      success: true,
+      data: formatPaymentResponse(updated),
+      message: 'Payment confirmed successfully',
+    });
   } catch (error) {
     return handleError(error, res);
   }
@@ -148,42 +238,63 @@ const cancelPaymentById = async (req, res) => {
       return res.status(404).json({ success: false, error: 'Payment not found' });
     }
 
-    return res.json({ success: true, data: updated, message: 'Payment cancelled successfully' });
+    return res.json({
+      success: true,
+      data: formatPaymentResponse(updated),
+      message: 'Payment cancelled successfully',
+    });
   } catch (error) {
     return handleError(error, res);
   }
 };
 
-const vietqrWebhook = async (req, res) => {
+const vnpayReturn = async (req, res) => {
   try {
-    const result = await processWebhook({
-      headers: req.headers,
-      body: req.body,
-      rawBody: req.rawBody || '',
+    const result = await processVnpayCallback({
+      query: req.query,
+      providerEventId: req.query.vnp_TransactionNo || req.query.vnp_TxnRef || null,
     });
 
-    if (result.duplicate) {
-      return res.json({
-        success: true,
-        message: 'Duplicate webhook event ignored',
-        data: result.data,
-      });
-    }
-
-    if (result.ignored) {
-      return res.json({
-        success: true,
-        message: 'Webhook received but payment status is not successful, ignored',
-      });
-    }
-
-    return res.json({
-      success: true,
-      message: 'Payment updated by webhook successfully',
-      data: result.payment,
-    });
+    return res.status(200).send(
+      `Payment processed. order_id=${result.payment.order_id}, payment_status=${result.payment.status}`
+    );
   } catch (error) {
-    return handleError(error, res, error.status || 500);
+    console.error('[VNPAY RETURN] Failed:', {
+      message: error.message,
+      status: error.status || 500,
+      txnRef: req.query?.vnp_TxnRef,
+      responseCode: req.query?.vnp_ResponseCode,
+      transactionStatus: req.query?.vnp_TransactionStatus,
+      bankCode: req.query?.vnp_BankCode,
+      cardType: req.query?.vnp_CardType,
+    });
+    return res.status(error.status || 500).send(`Payment failed: ${error.message}`);
+  }
+};
+
+const vnpayIpn = async (req, res) => {
+  try {
+    const eventId = req.query.vnp_TransactionNo || req.query.vnp_TxnRef || null;
+    await processVnpayCallback({
+      query: req.query,
+      providerEventId: eventId,
+    });
+
+    return res.json({ RspCode: '00', Message: 'Confirm Success' });
+  } catch (error) {
+    console.error('[VNPAY IPN] Failed:', {
+      message: error.message,
+      status: error.status || 500,
+      txnRef: req.query?.vnp_TxnRef,
+      responseCode: req.query?.vnp_ResponseCode,
+      transactionStatus: req.query?.vnp_TransactionStatus,
+      bankCode: req.query?.vnp_BankCode,
+      cardType: req.query?.vnp_CardType,
+    });
+    return res.status(error.status || 500).json({
+      RspCode: '99',
+      Message: error.message || 'Unknown error',
+    });
   }
 };
 
@@ -191,9 +302,12 @@ module.exports = {
   getAllPayments,
   getPaymentById,
   getPaymentsByOrder,
-  generateQrPayment,
+  retryPaymentByOrder,
+  generateVnpayPayment,
+  orderCreatedEvent,
   createCash,
   confirmPayment,
   cancelPaymentById,
-  vietqrWebhook,
+  vnpayReturn,
+  vnpayIpn,
 };

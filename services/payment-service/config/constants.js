@@ -1,19 +1,20 @@
 module.exports = {
   PORT: process.env.PORT || 3005,
-  VIETQR_API_URL: process.env.VIETQR_API_URL || 'https://api.vietqr.io/v2/generate',
-  VIETQR_CLIENT_ID: process.env.VIETQR_CLIENT_ID,
-  VIETQR_API_KEY: process.env.VIETQR_API_KEY,
-  VIETQR_BANK_BIN: process.env.VIETQR_BANK_BIN || '970436',
-  VIETQR_BANK_ACCOUNT: process.env.VIETQR_BANK_ACCOUNT || '1858611282',
-  VIETQR_ACCOUNT_NAME: process.env.VIETQR_ACCOUNT_NAME || 'NGUYEN TUAN HUNG',
-  QR_EXPIRE_MINUTES: parseInt(process.env.QR_EXPIRE_MINUTES || '15', 10),
-  PAYMENT_WEBHOOK_SECRET: process.env.PAYMENT_WEBHOOK_SECRET || 'dev_webhook_secret',
-  PAYMENT_WEBHOOK_SIGNING_SECRET:
-    process.env.PAYMENT_WEBHOOK_SIGNING_SECRET || process.env.PAYMENT_WEBHOOK_SECRET || 'dev_webhook_secret',
-  PAYMENT_WEBHOOK_TOLERANCE_SECONDS: parseInt(process.env.PAYMENT_WEBHOOK_TOLERANCE_SECONDS || '300', 10),
+  VNPAY_PAYMENT_URL:
+    process.env.VNPAY_PAYMENT_URL || 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
+  VNPAY_RETURN_URL:
+    process.env.VNPAY_RETURN_URL || 'http://localhost:3005/api/payments/vnpay-return',
+  VNPAY_TMN_CODE: process.env.VNPAY_TMN_CODE || '',
+  VNPAY_HASH_SECRET: process.env.VNPAY_HASH_SECRET || '',
+  VNPAY_VERSION: process.env.VNPAY_VERSION || '2.1.0',
+  VNPAY_COMMAND: process.env.VNPAY_COMMAND || 'pay',
+  VNPAY_CURR_CODE: process.env.VNPAY_CURR_CODE || 'VND',
+  VNPAY_LOCALE: process.env.VNPAY_LOCALE || 'vn',
+  VNPAY_ORDER_TYPE: process.env.VNPAY_ORDER_TYPE || 'other',
+  VNPAY_IP_ADDR_FALLBACK: process.env.VNPAY_IP_ADDR_FALLBACK || '127.0.0.1',
+  INTERNAL_EVENT_SECRET: process.env.INTERNAL_EVENT_SECRET || 'order_internal_secret_dev',
   ORDER_SERVICE_URL: process.env.ORDER_SERVICE_URL || 'http://order-service:3003',
   ORDER_INTERNAL_SECRET: process.env.ORDER_INTERNAL_SECRET || 'order_internal_secret_dev',
+  NOTIFICATION_SERVICE_URL: process.env.NOTIFICATION_SERVICE_URL || 'http://notification-service:3004',
   JWT_SECRET: process.env.JWT_SECRET || 'your_jwt_secret_key_here',
-  EMAIL_USER: process.env.EMAIL_USER,
-  EMAIL_PASSWORD: process.env.EMAIL_PASSWORD,
 };
