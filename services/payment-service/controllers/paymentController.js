@@ -1,4 +1,5 @@
 const { handleError } = require('../middleware/errorHandler');
+const { FRONTEND_RETURN_URL } = require('../config/constants');
 const {
   toPositiveNumber,
   listPaymentsByUser,
@@ -43,6 +44,12 @@ const formatPaymentResponse = (payment) => {
   }
 
   return formatted;
+};
+
+const extractOrderIdFromTxnRef = (txnRef) => {
+  const value = String(txnRef || '');
+  const match = value.match(/^OD(\d+)-/i);
+  return match ? match[1] : '';
 };
 
 const getAllPayments = async (req, res) => {
@@ -279,15 +286,17 @@ const vnpayReturn = async (req, res) => {
       providerEventId: req.query.vnp_TransactionNo || req.query.vnp_TxnRef || null,
     });
 
+    const status = result?.payment?.status || 'UNKNOWN';
+    const orderId = String(result?.payment?.order_id || extractOrderIdFromTxnRef(req.query?.vnp_TxnRef));
+    const redirectUrl = orderId
+      ? `${FRONTEND_RETURN_URL}/orders/${encodeURIComponent(orderId)}?payment_status=${encodeURIComponent(status)}`
+      : `${FRONTEND_RETURN_URL}?payment_status=${encodeURIComponent(status)}`;
+
     if (result.ignored) {
-      return res.status(200).send(
-        `Payment ignored because order already cancelled. order_id=${result.payment.order_id}, payment_status=${result.payment.status}`
-      );
+      return res.redirect(302, redirectUrl);
     }
 
-    return res.status(200).send(
-      `Payment processed. order_id=${result.payment.order_id}, payment_status=${result.payment.status}`
-    );
+    return res.redirect(302, redirectUrl);
   } catch (error) {
     console.error('[VNPAY RETURN] Failed:', {
       message: error.message,
@@ -296,7 +305,11 @@ const vnpayReturn = async (req, res) => {
       responseCode: req.query?.vnp_ResponseCode,
       transactionStatus: req.query?.vnp_TransactionStatus,
     });
-    return res.status(error.status || 500).send(`Payment failed: ${error.message}`);
+    const orderId = extractOrderIdFromTxnRef(req.query?.vnp_TxnRef);
+    const failedRedirectUrl = orderId
+      ? `${FRONTEND_RETURN_URL}/orders/${encodeURIComponent(orderId)}?payment_status=FAILED&error=${encodeURIComponent(error.message || 'Payment failed')}`
+      : `${FRONTEND_RETURN_URL}?payment_status=FAILED&error=${encodeURIComponent(error.message || 'Payment failed')}`;
+    return res.redirect(302, failedRedirectUrl);
   }
 };
 

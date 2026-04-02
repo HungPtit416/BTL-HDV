@@ -1,7 +1,7 @@
 const pool = require('../db');
 const { handleError } = require('../middleware/errorHandler');
 const { toPositiveInt } = require('../services/orderService');
-const { restoreOrderItemsToCart, restoreProductInventoryByOrder } = require('../services/orderService');
+const { removeOrderItemsFromCartAfterPaid, restoreProductInventoryByOrder } = require('../services/orderService');
 
 const updateOrderPaymentStatus = async (req, res) => {
   try {
@@ -57,18 +57,15 @@ const updateOrderPaymentStatus = async (req, res) => {
 
     if (status === 'CANCELLED') {
       try {
-        await restoreOrderItemsToCart({
-          orderId,
-          userId: updated.rows[0].user_id,
-        });
-      } catch (restoreError) {
-        console.error('Restore cart items failed after internal cancel:', restoreError.message);
-      }
-
-      try {
         await restoreProductInventoryByOrder({ orderId });
       } catch (restoreError) {
         console.error('Restore product inventory failed after internal cancel:', restoreError.message);
+      }
+    } else if (status === 'PAID') {
+      try {
+        await removeOrderItemsFromCartAfterPaid({ orderId });
+      } catch (cartError) {
+        console.error('Remove cart items after paid failed:', cartError.message);
       }
     }
 

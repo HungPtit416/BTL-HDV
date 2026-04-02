@@ -6,7 +6,7 @@ const {
   ORDER_AUTO_CANCEL_MINUTES,
   ORDER_AUTO_CANCEL_INTERVAL_SECONDS,
 } = require('../config/constants');
-const { restoreOrderItemsToCart, restoreProductInventoryByOrder } = require('../services/orderService');
+const { restoreProductInventoryByOrder } = require('../services/orderService');
 
 const safePositiveInt = (value, fallback) => {
   const parsed = Number(value);
@@ -26,7 +26,7 @@ const startOrderAutoCancelJob = () => {
              updated_at = NOW()
          WHERE status = 'PENDING'
            AND created_at <= NOW() - ($1::int * INTERVAL '1 minute')
-         RETURNING id, user_id`,
+         RETURNING id`,
         [timeoutMinutes]
       );
 
@@ -38,13 +38,6 @@ const startOrderAutoCancelJob = () => {
 
         for (const row of result.rows) {
           const orderId = row.id;
-          const userId = row.user_id;
-
-          try {
-            await restoreOrderItemsToCart({ orderId, userId });
-          } catch (restoreError) {
-            console.error(`[AUTO_CANCEL] Restore cart failed for order ${orderId}:`, restoreError.message);
-          }
 
           try {
             await restoreProductInventoryByOrder({ orderId });

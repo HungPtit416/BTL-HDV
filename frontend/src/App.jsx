@@ -1,26 +1,45 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { CartProvider } from './context/CartContext';
+
+// Pages
 import Login from './pages/Login';
-import Home from './pages/Home';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import ProductList from './pages/ProductList';
+import ProductDetail from './pages/ProductDetail';
+import Cart from './pages/Cart';
+import Checkout from './pages/Checkout';
+import OrderSuccess from './pages/OrderSuccess';
+import OrderDetail from './pages/OrderDetail';
+import Orders from './pages/Orders';
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        {/* TRANG CHỦ: Giờ đây người dùng có thể vào xem sản phẩm ngay */}
-        <Route path="/" element={<Home />} />
+    <CartProvider>
+      <Router>
+        <Routes>
+          {/* TRANG CHỦ & SẢN PHẨM */}
+          <Route path="/" element={<ProductList />} />
+          <Route path="/product/:id" element={<ProductDetail />} />
 
-        {/* Các trang Authentication */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/forgotpassword" element={<ForgotPassword />} />
-        <Route path="/resetpassword/:token" element={<ResetPassword />} />
+          {/* GIỎ HÀNG & THANH TOÁN */}
+          <Route path="/cart" element={<Cart />} />
+          <Route path="/checkout" element={<Checkout />} />
+          <Route path="/order-success" element={<OrderSuccess />} />
+          <Route path="/orders" element={<Orders />} />
+          <Route path="/orders/:id" element={<OrderDetail />} />
 
-        <Route path="*" element={<Navigate to="/" />} />
-      </Routes>
-    </Router>
+          {/* AUTHENTICATION */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgotpassword" element={<ForgotPassword />} />
+          <Route path="/resetpassword/:token" element={<ResetPassword />} />
+
+          <Route path="*" element={<Navigate to="/" />} />
+        </Routes>
+      </Router>
+    </CartProvider>
   );
 }
 

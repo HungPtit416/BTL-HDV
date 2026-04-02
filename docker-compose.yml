@@ -221,6 +221,7 @@ services:
       ORDER_INTERNAL_SECRET: ${ORDER_INTERNAL_SECRET:-order_internal_secret_dev}
       INTERNAL_EVENT_SECRET: ${ORDER_INTERNAL_SECRET:-order_internal_secret_dev}
       NOTIFICATION_SERVICE_URL: http://notification-service:3004
+      FRONTEND_RETURN_URL: http://localhost:3000
     depends_on:
       payment_db:
         condition: service_healthy

@@ -4,6 +4,7 @@ module.exports = {
     process.env.VNPAY_PAYMENT_URL || 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html',
   VNPAY_RETURN_URL:
     process.env.VNPAY_RETURN_URL || 'http://localhost:3005/api/payments/vnpay-return',
+  FRONTEND_RETURN_URL: process.env.FRONTEND_RETURN_URL || 'http://localhost:3000',
   VNPAY_TMN_CODE: process.env.VNPAY_TMN_CODE || '',
   VNPAY_HASH_SECRET: process.env.VNPAY_HASH_SECRET || '',
   VNPAY_VERSION: process.env.VNPAY_VERSION || '2.1.0',

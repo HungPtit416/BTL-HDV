@@ -12,7 +12,6 @@ const {
   getCartItems,
   getProductById,
   getProductUnitPrice,
-  restoreOrderItemsToCart,
   restoreProductInventoryByOrder,
 } = require('../services/orderService');
 
@@ -130,7 +129,6 @@ const checkout = async (req, res) => {
       );
     }
 
-    await client.query('DELETE FROM cart_items WHERE cart_id = $1', [cart.id]);
     await client.query('COMMIT');
 
     try {
@@ -343,15 +341,6 @@ const cancelOrder = async (req, res) => {
         success: false,
         error: 'Order status changed, cannot cancel now',
       });
-    }
-
-    try {
-      await restoreOrderItemsToCart({
-        orderId,
-        userId: req.user.id,
-      });
-    } catch (restoreError) {
-      console.error('Restore cart items failed after cancel:', restoreError.message);
     }
 
     try {

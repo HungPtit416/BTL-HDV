@@ -78,46 +78,53 @@ const getCartItems = async (cartId) => {
   return result.rows;
 };
 
-const restoreOrderItemsToCart = async ({ orderId, userId }) => {
+const removeOrderItemsFromCartAfterPaid = async ({ orderId }) => {
   const parsedOrderId = toPositiveInt(orderId);
-  const parsedUserId = toPositiveInt(userId);
-  if (!parsedOrderId || !parsedUserId) {
-    return { restored_count: 0 };
+  if (!parsedOrderId) {
+    return { removed_count: 0 };
   }
 
-  const cart = await getOrCreateCart(parsedUserId);
+  const orderResult = await pool.query('SELECT user_id FROM orders WHERE id = $1 LIMIT 1', [parsedOrderId]);
+  if (orderResult.rowCount === 0) {
+    return { removed_count: 0 };
+  }
+
+  const userId = orderResult.rows[0].user_id;
+  const cartResult = await pool.query('SELECT id FROM carts WHERE user_id = $1 LIMIT 1', [userId]);
+  if (cartResult.rowCount === 0) {
+    return { removed_count: 0 };
+  }
+
+  const cartId = cartResult.rows[0].id;
   const itemsResult = await pool.query(
-    `SELECT product_id, quantity, unit_price
+    `SELECT product_id, quantity
      FROM order_items
      WHERE order_id = $1
      ORDER BY id ASC`,
     [parsedOrderId]
   );
 
+  let affected = 0;
   for (const item of itemsResult.rows) {
     const existing = await pool.query(
-      'SELECT id FROM cart_items WHERE cart_id = $1 AND product_id = $2 LIMIT 1',
-      [cart.id, item.product_id]
+      'SELECT id, quantity FROM cart_items WHERE cart_id = $1 AND product_id = $2 LIMIT 1',
+      [cartId, item.product_id]
     );
 
-    if (existing.rows.length > 0) {
-      await pool.query(
-        `UPDATE cart_items
-         SET quantity = quantity + $1,
-             unit_price = $2
-         WHERE id = $3`,
-        [item.quantity, item.unit_price, existing.rows[0].id]
-      );
-    } else {
-      await pool.query(
-        `INSERT INTO cart_items (cart_id, product_id, quantity, unit_price, created_at)
-         VALUES ($1, $2, $3, $4, NOW())`,
-        [cart.id, item.product_id, item.quantity, item.unit_price]
-      );
+    if (existing.rowCount === 0) {
+      continue;
     }
+
+    const nextQty = Number(existing.rows[0].quantity) - Number(item.quantity);
+    if (nextQty > 0) {
+      await pool.query('UPDATE cart_items SET quantity = $1 WHERE id = $2', [nextQty, existing.rows[0].id]);
+    } else {
+      await pool.query('DELETE FROM cart_items WHERE id = $1', [existing.rows[0].id]);
+    }
+    affected += 1;
   }
 
-  return { restored_count: itemsResult.rowCount };
+  return { removed_count: affected };
 };
 
 const restoreProductInventoryByOrder = async ({ orderId }) => {
@@ -165,6 +172,6 @@ module.exports = {
   getProductUnitPrice,
   getOrCreateCart,
   getCartItems,
-  restoreOrderItemsToCart,
+  removeOrderItemsFromCartAfterPaid,
   restoreProductInventoryByOrder,
 };
