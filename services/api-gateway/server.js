@@ -40,6 +40,7 @@ app.use('/api/categories', createProxyMiddleware(proxyOptions(PRODUCT_SERVICE_UR
 
 app.use('/api/orders', createProxyMiddleware(proxyOptions(ORDER_SERVICE_URL)));
 app.use('/api/carts', createProxyMiddleware(proxyOptions(ORDER_SERVICE_URL)));
+app.use('/api/cart', createProxyMiddleware(proxyOptions(ORDER_SERVICE_URL)));
 
 app.use('/api/payments', createProxyMiddleware(proxyOptions(PAYMENT_SERVICE_URL)));
 app.use('/api/events', createProxyMiddleware(proxyOptions(PAYMENT_SERVICE_URL)));

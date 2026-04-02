@@ -9,6 +9,23 @@ const {
   getProductUnitPrice,
 } = require('../services/orderService');
 
+const toNonNegativeInt = (value) => {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= 0 ? n : null;
+};
+
+const getCartItemOwner = async (itemId) => {
+  const itemOwner = await pool.query(
+    `SELECT ci.*, c.user_id
+     FROM cart_items ci
+     INNER JOIN carts c ON c.id = ci.cart_id
+     WHERE ci.id = $1`,
+    [itemId]
+  );
+
+  return itemOwner.rows[0] || null;
+};
+
 const getCartByUser = async (req, res) => {
   try {
     const userId = toPositiveInt(req.params.userId);
@@ -89,26 +106,24 @@ const addCartItem = async (req, res) => {
 const updateCartItem = async (req, res) => {
   try {
     const itemId = toPositiveInt(req.params.itemId);
-    const quantity = toPositiveInt(req.body.quantity);
+    const quantity = toNonNegativeInt(req.body.quantity);
 
-    if (!itemId || !quantity) {
-      return res.status(400).json({ success: false, error: 'itemId and quantity must be positive integers' });
+    if (!itemId || quantity === null) {
+      return res.status(400).json({ success: false, error: 'itemId must be positive and quantity must be a non-negative integer' });
     }
 
-    const itemOwner = await pool.query(
-      `SELECT c.user_id
-       FROM cart_items ci
-       INNER JOIN carts c ON c.id = ci.cart_id
-       WHERE ci.id = $1`,
-      [itemId]
-    );
-
-    if (itemOwner.rows.length === 0) {
+    const item = await getCartItemOwner(itemId);
+    if (!item) {
       return res.status(404).json({ success: false, error: 'Cart item not found' });
     }
 
-    if (!canAccessUser(req.user.id, itemOwner.rows[0].user_id)) {
+    if (!canAccessUser(req.user.id, item.user_id)) {
       return res.status(403).json({ success: false, error: 'You are not allowed to modify this cart item' });
+    }
+
+    if (quantity === 0) {
+      await pool.query('DELETE FROM cart_items WHERE id = $1', [itemId]);
+      return res.json({ success: true, message: 'Cart item removed because quantity is 0' });
     }
 
     const updated = await pool.query('UPDATE cart_items SET quantity = $1 WHERE id = $2 RETURNING *', [quantity, itemId]);
@@ -118,6 +133,67 @@ const updateCartItem = async (req, res) => {
     }
 
     return res.json({ success: true, message: 'Cart item updated', data: updated.rows[0] });
+  } catch (error) {
+    return handleError(error, res);
+  }
+};
+
+const increaseCartItemQuantity = async (req, res) => {
+  try {
+    const itemId = toPositiveInt(req.params.itemId);
+
+    if (!itemId) {
+      return res.status(400).json({ success: false, error: 'Valid itemId is required' });
+    }
+
+    const item = await getCartItemOwner(itemId);
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'Cart item not found' });
+    }
+
+    if (!canAccessUser(req.user.id, item.user_id)) {
+      return res.status(403).json({ success: false, error: 'You are not allowed to modify this cart item' });
+    }
+
+    const updated = await pool.query(
+      `UPDATE cart_items
+       SET quantity = quantity + 1
+       WHERE id = $1
+       RETURNING *`,
+      [itemId]
+    );
+
+    return res.json({ success: true, message: 'Cart item quantity increased', data: updated.rows[0] });
+  } catch (error) {
+    return handleError(error, res);
+  }
+};
+
+const decreaseCartItemQuantity = async (req, res) => {
+  try {
+    const itemId = toPositiveInt(req.params.itemId);
+
+    if (!itemId) {
+      return res.status(400).json({ success: false, error: 'Valid itemId is required' });
+    }
+
+    const item = await getCartItemOwner(itemId);
+    if (!item) {
+      return res.status(404).json({ success: false, error: 'Cart item not found' });
+    }
+
+    if (!canAccessUser(req.user.id, item.user_id)) {
+      return res.status(403).json({ success: false, error: 'You are not allowed to modify this cart item' });
+    }
+
+    const nextQty = Number(item.quantity) - 1;
+    if (nextQty <= 0) {
+      await pool.query('DELETE FROM cart_items WHERE id = $1', [itemId]);
+      return res.json({ success: true, message: 'Cart item removed after quantity reached 0' });
+    }
+
+    const updated = await pool.query('UPDATE cart_items SET quantity = $1 WHERE id = $2 RETURNING *', [nextQty, itemId]);
+    return res.json({ success: true, message: 'Cart item quantity decreased', data: updated.rows[0] });
   } catch (error) {
     return handleError(error, res);
   }
@@ -181,6 +257,8 @@ module.exports = {
   getCartByUser,
   addCartItem,
   updateCartItem,
+  increaseCartItemQuantity,
+  decreaseCartItemQuantity,
   removeCartItem,
   clearCart,
 };
