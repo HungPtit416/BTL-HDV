@@ -39,6 +39,17 @@ CREATE INDEX IF NOT EXISTS idx_products_category_id ON products(category_id);
 CREATE INDEX IF NOT EXISTS idx_products_brand_id ON products(brand_id);
 CREATE INDEX IF NOT EXISTS idx_products_name_trgm ON products(name);
 CREATE INDEX IF NOT EXISTS idx_products_price_filter ON products(export_price);
+
+-- Inventory event idempotency table
+CREATE TABLE IF NOT EXISTS inventory_order_events (
+    id SERIAL PRIMARY KEY,
+    order_id INTEGER NOT NULL,
+    event_type VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (order_id, event_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_order_events_order_id ON inventory_order_events(order_id);
 -- Seed Categories
 INSERT INTO categories (name, description) VALUES
 ('Rackets', 'Badminton rackets and paddles'),

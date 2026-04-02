@@ -1,10 +1,47 @@
 const pool = require('../db');
 const { validateProduct } = require('../utils/validators');
 
+const INVENTORY_EVENT_LOCK = 'LOCK';
+const INVENTORY_EVENT_UNLOCK = 'UNLOCK';
+let inventoryEventSchemaReady = false;
+
+const ensureInventoryEventSchema = async () => {
+  if (inventoryEventSchemaReady) return;
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS inventory_order_events (
+      id SERIAL PRIMARY KEY,
+      order_id INTEGER NOT NULL,
+      event_type VARCHAR(20) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (order_id, event_type)
+    )
+  `);
+  await pool.query(
+    'CREATE INDEX IF NOT EXISTS idx_inventory_order_events_order_id ON inventory_order_events(order_id)'
+  );
+
+  inventoryEventSchemaReady = true;
+};
+
+const reserveInventoryEvent = async (client, orderId, eventType) => {
+  const result = await client.query(
+    `INSERT INTO inventory_order_events (order_id, event_type, created_at)
+     VALUES ($1, $2, CURRENT_TIMESTAMP)
+     ON CONFLICT (order_id, event_type) DO NOTHING
+     RETURNING id`,
+    [orderId, eventType]
+  );
+
+  return result.rowCount > 0;
+};
+
 const lockInventoryByOrderEvent = async (req, res) => {
   const client = await pool.connect();
 
   try {
+    await ensureInventoryEventSchema();
+
     const internalSecret = req.headers['x-internal-secret'];
     const expectedSecret = process.env.ORDER_INTERNAL_SECRET || 'order_internal_secret_dev';
 
@@ -16,7 +53,8 @@ const lockInventoryByOrderEvent = async (req, res) => {
     }
 
     const { order_id, items } = req.body || {};
-    if (!order_id || !Array.isArray(items) || items.length === 0) {
+    const orderId = Number(order_id);
+    if (!Number.isInteger(orderId) || orderId <= 0 || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({
         success: false,
         error: 'order_id and non-empty items are required',
@@ -24,6 +62,16 @@ const lockInventoryByOrderEvent = async (req, res) => {
     }
 
     await client.query('BEGIN');
+
+    const shouldProcess = await reserveInventoryEvent(client, orderId, INVENTORY_EVENT_LOCK);
+    if (!shouldProcess) {
+      await client.query('COMMIT');
+      return res.status(200).json({
+        success: true,
+        message: 'Inventory lock already processed (idempotent)',
+        data: { order_id: orderId, locked_items: 0, duplicate: true },
+      });
+    }
 
     for (const item of items) {
       const productId = Number(item.product_id);
@@ -52,7 +100,7 @@ const lockInventoryByOrderEvent = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: 'Inventory locked successfully',
-      data: { order_id, locked_items: items.length },
+      data: { order_id: orderId, locked_items: items.length },
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -66,6 +114,97 @@ const lockInventoryByOrderEvent = async (req, res) => {
   }
 };
 
+const unlockInventoryByOrderCancelledEvent = async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    await ensureInventoryEventSchema();
+
+    const internalSecret = req.headers['x-internal-secret'];
+    const expectedSecret = process.env.ORDER_INTERNAL_SECRET || 'order_internal_secret_dev';
+
+    if (!internalSecret || internalSecret !== expectedSecret) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized internal request',
+      });
+    }
+
+    const { order_id, items } = req.body || {};
+    const orderId = Number(order_id);
+    if (!Number.isInteger(orderId) || orderId <= 0 || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'order_id and non-empty items are required',
+      });
+    }
+
+    await client.query('BEGIN');
+
+    const lockApplied = await client.query(
+      'SELECT id FROM inventory_order_events WHERE order_id = $1 AND event_type = $2 LIMIT 1',
+      [orderId, INVENTORY_EVENT_LOCK]
+    );
+
+    if (lockApplied.rowCount === 0) {
+      await client.query('COMMIT');
+      return res.status(200).json({
+        success: true,
+        message: 'Inventory unlock skipped because lock was never applied',
+        data: { order_id: orderId, unlocked_items: 0, skipped: true },
+      });
+    }
+
+    const shouldProcess = await reserveInventoryEvent(client, orderId, INVENTORY_EVENT_UNLOCK);
+    if (!shouldProcess) {
+      await client.query('COMMIT');
+      return res.status(200).json({
+        success: true,
+        message: 'Inventory unlock already processed (idempotent)',
+        data: { order_id: orderId, unlocked_items: 0, duplicate: true },
+      });
+    }
+
+    for (const item of items) {
+      const productId = Number(item.product_id);
+      const quantity = Number(item.quantity);
+
+      if (!Number.isInteger(productId) || productId <= 0 || !Number.isInteger(quantity) || quantity <= 0) {
+        throw new Error('Invalid product_id or quantity in items');
+      }
+
+      const updated = await client.query(
+        `UPDATE products
+         SET quantity = quantity + $1,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $2
+         RETURNING id, name, quantity`,
+        [quantity, productId]
+      );
+
+      if (updated.rows.length === 0) {
+        throw new Error(`Product not found for restock: product_id=${productId}`);
+      }
+    }
+
+    await client.query('COMMIT');
+
+    return res.status(201).json({
+      success: true,
+      message: 'Inventory unlocked successfully',
+      data: { order_id: orderId, unlocked_items: items.length },
+    });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error unlocking inventory:', error);
+    return res.status(409).json({
+      success: false,
+      error: error.message,
+    });
+  } finally {
+    client.release();
+  }
+};
 // Get all products with optional filters
 const getAllProducts = async (req, res) => {
   try {
@@ -401,4 +540,5 @@ module.exports = {
   getProductsByCategory,
   getProductsByBrand,
   lockInventoryByOrderEvent,
+  unlockInventoryByOrderCancelledEvent,
 };

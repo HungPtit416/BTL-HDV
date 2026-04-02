@@ -6,6 +6,7 @@ const {
   getPaymentsByOrderAndUser,
   createVnpayPayment,
   createPaymentByOrderEvent,
+  cancelPendingPaymentsByOrderEvent,
   retryVnpayPaymentByOrder,
   createCashPayment,
   confirmPaymentPaid,
@@ -166,6 +167,29 @@ const orderCreatedEvent = async (req, res) => {
   }
 };
 
+const orderCancelledEvent = async (req, res) => {
+  try {
+    const orderId = Number(req.body?.order_id);
+    const reason = req.body?.reason;
+
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid order_id is required',
+      });
+    }
+
+    const result = await cancelPendingPaymentsByOrderEvent({ orderId, reason });
+    return res.status(200).json({
+      success: true,
+      message: 'Payments cancelled from ORDER_CANCELLED event',
+      data: result,
+    });
+  } catch (error) {
+    return handleError(error, res, error.status || 500);
+  }
+};
+
 const createCash = async (req, res) => {
   try {
     const { order_id, user_id, total_amount, description } = req.body;
@@ -255,6 +279,12 @@ const vnpayReturn = async (req, res) => {
       providerEventId: req.query.vnp_TransactionNo || req.query.vnp_TxnRef || null,
     });
 
+    if (result.ignored) {
+      return res.status(200).send(
+        `Payment ignored because order already cancelled. order_id=${result.payment.order_id}, payment_status=${result.payment.status}`
+      );
+    }
+
     return res.status(200).send(
       `Payment processed. order_id=${result.payment.order_id}, payment_status=${result.payment.status}`
     );
@@ -265,8 +295,6 @@ const vnpayReturn = async (req, res) => {
       txnRef: req.query?.vnp_TxnRef,
       responseCode: req.query?.vnp_ResponseCode,
       transactionStatus: req.query?.vnp_TransactionStatus,
-      bankCode: req.query?.vnp_BankCode,
-      cardType: req.query?.vnp_CardType,
     });
     return res.status(error.status || 500).send(`Payment failed: ${error.message}`);
   }
@@ -288,8 +316,6 @@ const vnpayIpn = async (req, res) => {
       txnRef: req.query?.vnp_TxnRef,
       responseCode: req.query?.vnp_ResponseCode,
       transactionStatus: req.query?.vnp_TransactionStatus,
-      bankCode: req.query?.vnp_BankCode,
-      cardType: req.query?.vnp_CardType,
     });
     return res.status(error.status || 500).json({
       RspCode: '99',
@@ -305,6 +331,7 @@ module.exports = {
   retryPaymentByOrder,
   generateVnpayPayment,
   orderCreatedEvent,
+  orderCancelledEvent,
   createCash,
   confirmPayment,
   cancelPaymentById,

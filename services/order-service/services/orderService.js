@@ -1,6 +1,6 @@
 const axios = require('axios');
 const pool = require('../db');
-const { PRODUCT_SERVICE_URL } = require('../config/constants');
+const { PRODUCT_SERVICE_URL, ORDER_INTERNAL_SECRET } = require('../config/constants');
 
 const toPositiveInt = (value) => {
   const n = Number(value);
@@ -78,6 +78,83 @@ const getCartItems = async (cartId) => {
   return result.rows;
 };
 
+const restoreOrderItemsToCart = async ({ orderId, userId }) => {
+  const parsedOrderId = toPositiveInt(orderId);
+  const parsedUserId = toPositiveInt(userId);
+  if (!parsedOrderId || !parsedUserId) {
+    return { restored_count: 0 };
+  }
+
+  const cart = await getOrCreateCart(parsedUserId);
+  const itemsResult = await pool.query(
+    `SELECT product_id, quantity, unit_price
+     FROM order_items
+     WHERE order_id = $1
+     ORDER BY id ASC`,
+    [parsedOrderId]
+  );
+
+  for (const item of itemsResult.rows) {
+    const existing = await pool.query(
+      'SELECT id FROM cart_items WHERE cart_id = $1 AND product_id = $2 LIMIT 1',
+      [cart.id, item.product_id]
+    );
+
+    if (existing.rows.length > 0) {
+      await pool.query(
+        `UPDATE cart_items
+         SET quantity = quantity + $1,
+             unit_price = $2
+         WHERE id = $3`,
+        [item.quantity, item.unit_price, existing.rows[0].id]
+      );
+    } else {
+      await pool.query(
+        `INSERT INTO cart_items (cart_id, product_id, quantity, unit_price, created_at)
+         VALUES ($1, $2, $3, $4, NOW())`,
+        [cart.id, item.product_id, item.quantity, item.unit_price]
+      );
+    }
+  }
+
+  return { restored_count: itemsResult.rowCount };
+};
+
+const restoreProductInventoryByOrder = async ({ orderId }) => {
+  const parsedOrderId = toPositiveInt(orderId);
+  if (!parsedOrderId) {
+    return { unlocked_count: 0 };
+  }
+
+  const itemsResult = await pool.query(
+    `SELECT product_id, quantity
+     FROM order_items
+     WHERE order_id = $1
+     ORDER BY id ASC`,
+    [parsedOrderId]
+  );
+
+  if (itemsResult.rowCount === 0) {
+    return { unlocked_count: 0 };
+  }
+
+  await axios.post(
+    `${PRODUCT_SERVICE_URL}/api/products/events/order-cancelled-unlock`,
+    {
+      order_id: parsedOrderId,
+      items: itemsResult.rows,
+    },
+    {
+      headers: {
+        'x-internal-secret': ORDER_INTERNAL_SECRET,
+      },
+      timeout: 10000,
+    }
+  );
+
+  return { unlocked_count: itemsResult.rowCount };
+};
+
 module.exports = {
   toPositiveInt,
   toPositiveNumber,
@@ -88,4 +165,6 @@ module.exports = {
   getProductUnitPrice,
   getOrCreateCart,
   getCartItems,
+  restoreOrderItemsToCart,
+  restoreProductInventoryByOrder,
 };

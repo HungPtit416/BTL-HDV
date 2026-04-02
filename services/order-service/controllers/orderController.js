@@ -12,7 +12,50 @@ const {
   getCartItems,
   getProductById,
   getProductUnitPrice,
+  restoreOrderItemsToCart,
+  restoreProductInventoryByOrder,
 } = require('../services/orderService');
+
+const paymentAuthHeaders = (authorization) => ({
+  Authorization: authorization,
+});
+
+const getPaymentsByOrderFromPaymentService = async ({ orderId, authorization }) => {
+  const paymentResponse = await axios.get(`${PAYMENT_SERVICE_URL}/api/payments/order/${orderId}`, {
+    headers: paymentAuthHeaders(authorization),
+    timeout: 10000,
+  });
+
+  return paymentResponse.data?.data || [];
+};
+
+const emitOrderCancelledEvent = async ({ orderId, reason }) => {
+  await axios.post(
+    `${PAYMENT_SERVICE_URL}/api/events/order-cancelled`,
+    {
+      order_id: orderId,
+      reason,
+    },
+    {
+      headers: {
+        'x-internal-secret': ORDER_INTERNAL_SECRET,
+      },
+      timeout: 10000,
+    }
+  );
+};
+
+const hidePaymentUrlForCancelledOrder = (payments, orderStatus) => {
+  if (String(orderStatus || '').toUpperCase() !== 'CANCELLED') {
+    return payments;
+  }
+
+  return payments.map((payment) => {
+    const cloned = { ...payment };
+    delete cloned.payment_url;
+    return cloned;
+  });
+};
 
 const checkout = async (req, res) => {
   const client = await pool.connect();
@@ -215,13 +258,11 @@ const getOrderById = async (req, res) => {
 
     let payments = [];
     try {
-      const paymentResponse = await axios.get(`${PAYMENT_SERVICE_URL}/api/payments/order/${orderId}`, {
-        headers: {
-          Authorization: req.headers.authorization,
-        },
-        timeout: 10000,
+      payments = await getPaymentsByOrderFromPaymentService({
+        orderId,
+        authorization: req.headers.authorization,
       });
-      payments = paymentResponse.data?.data || [];
+      payments = hidePaymentUrlForCancelledOrder(payments, orderResult.rows[0].status);
     } catch (paymentError) {
       console.error('Fetch payment by order failed:', paymentError.message);
     }
@@ -239,8 +280,105 @@ const getOrderById = async (req, res) => {
   }
 };
 
+const cancelOrder = async (req, res) => {
+  try {
+    const orderId = toPositiveInt(req.params.id);
+    if (!orderId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid order id is required',
+      });
+    }
+
+    const orderResult = await pool.query('SELECT * FROM orders WHERE id = $1', [orderId]);
+    if (orderResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: 'Order not found',
+      });
+    }
+
+    const order = orderResult.rows[0];
+    if (!canAccessUser(req.user.id, order.user_id)) {
+      return res.status(403).json({
+        success: false,
+        error: 'You are not allowed to cancel this order',
+      });
+    }
+
+    try {
+      const payments = await getPaymentsByOrderFromPaymentService({
+        orderId,
+        authorization: req.headers.authorization,
+      });
+      const paid = payments.some((payment) => String(payment.status || '').toUpperCase() === 'PAID');
+      if (paid) {
+        return res.status(409).json({
+          success: false,
+          error: 'Order already has paid payment and cannot be cancelled',
+        });
+      }
+    } catch (paymentError) {
+      console.error('Check payment status before cancel failed:', paymentError.message);
+    }
+
+    if (String(order.status || '').toUpperCase() !== 'PENDING') {
+      return res.status(409).json({
+        success: false,
+        error: 'Only PENDING orders can be cancelled',
+      });
+    }
+
+    const updated = await pool.query(
+      `UPDATE orders
+       SET status = $1,
+           updated_at = NOW()
+       WHERE id = $2 AND user_id = $3 AND status = $4
+       RETURNING *`,
+      ['CANCELLED', orderId, req.user.id, 'PENDING']
+    );
+
+    if (updated.rows.length === 0) {
+      return res.status(409).json({
+        success: false,
+        error: 'Order status changed, cannot cancel now',
+      });
+    }
+
+    try {
+      await restoreOrderItemsToCart({
+        orderId,
+        userId: req.user.id,
+      });
+    } catch (restoreError) {
+      console.error('Restore cart items failed after cancel:', restoreError.message);
+    }
+
+    try {
+      await restoreProductInventoryByOrder({ orderId });
+    } catch (restoreError) {
+      console.error('Restore product inventory failed after cancel:', restoreError.message);
+    }
+
+    try {
+      await emitOrderCancelledEvent({ orderId, reason: 'Order cancelled by user' });
+    } catch (paymentError) {
+      console.error('Cancel related payment failed:', paymentError.message);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Order cancelled successfully',
+      data: updated.rows[0],
+    });
+  } catch (error) {
+    return handleError(error, res);
+  }
+};
+
 module.exports = {
   checkout,
   getOrders,
   getOrderById,
+  cancelOrder,
 };

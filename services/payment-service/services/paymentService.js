@@ -125,10 +125,6 @@ const verifyVnpaySignature = (queryParams) => {
     console.error('[VNPAY] Signature mismatch', {
       txnRef: payload.vnp_TxnRef,
       responseCode: payload.vnp_ResponseCode,
-      receivedLength: normalizedReceived.length,
-      expectedLength: normalizedExpected.length,
-      receivedPreview: normalizedReceived.slice(0, 12),
-      expectedPreview: normalizedExpected.slice(0, 12),
     });
     const err = new Error('Invalid VNPAY signature');
     err.status = 401;
@@ -167,6 +163,55 @@ const emitPaymentSuccessEvent = async ({ payment, transactionId }) => {
       },
     }
   );
+};
+
+const getOrderInternal = async (orderId) => {
+  const response = await axios.get(`${ORDER_SERVICE_URL}/internal/orders/${orderId}`, {
+    timeout: 10000,
+    headers: {
+      'x-internal-secret': ORDER_INTERNAL_SECRET,
+    },
+  });
+
+  return response.data?.data || null;
+};
+
+const cancelPendingPaymentsByOrderEvent = async ({ orderId, reason }) => {
+  const parsedOrderId = toPositiveInt(orderId);
+  if (!parsedOrderId) {
+    const err = new Error('Valid orderId is required');
+    err.status = 400;
+    throw err;
+  }
+
+  const cancelReason = reason || 'Order cancelled';
+  const clearUrlResult = await pool.query(
+    `UPDATE payments
+     SET payment_url = NULL,
+         updated_at = NOW()
+     WHERE order_id = $1
+       AND payment_url IS NOT NULL
+     RETURNING id`,
+    [parsedOrderId]
+  );
+
+  const result = await pool.query(
+    `UPDATE payments
+     SET status = 'CANCELLED',
+         fail_reason = COALESCE(fail_reason, $1),
+         updated_at = NOW()
+     WHERE order_id = $2
+       AND status IN ('PENDING', 'PENDING_CASH', 'FAILED')
+     RETURNING id`,
+    [cancelReason, parsedOrderId]
+  );
+
+  return {
+    order_id: parsedOrderId,
+    payment_url_cleared_count: clearUrlResult.rowCount,
+    cancelled_count: result.rowCount,
+    payment_ids: result.rows.map((row) => row.id),
+  };
 };
 
 const ensurePaymentSchema = async () => {
@@ -245,7 +290,6 @@ const createVnpayPayment = async ({ orderId, userId, amount, description, userEm
 
   return {
     payment: result.rows[0],
-    payment_url: paymentUrl,
   };
 };
 
@@ -279,11 +323,10 @@ const createPaymentByOrderEvent = async ({ orderId, userId, amount, paymentMetho
   const method = String(paymentMethod || 'QR').trim().toUpperCase();
   if (method === 'CASH') {
     const payment = await createCashPayment({ orderId, userId, amount, description, userEmail });
-    return { payment, payment_url: null };
+    return { payment };
   }
 
-  const vnpay = await createVnpayPayment({ orderId, userId, amount, description, userEmail, ipAddr });
-  return { payment: vnpay.payment, payment_url: vnpay.payment_url };
+  return createVnpayPayment({ orderId, userId, amount, description, userEmail, ipAddr });
 };
 
 const retryVnpayPaymentByOrder = async ({ orderId, userId, description, ipAddr }) => {
@@ -294,6 +337,21 @@ const retryVnpayPaymentByOrder = async ({ orderId, userId, description, ipAddr }
     const err = new Error('Valid orderId and userId are required');
     err.status = 400;
     throw err;
+  }
+
+  try {
+    const order = await getOrderInternal(parsedOrderId);
+    const orderStatus = String(order?.status || '').toUpperCase();
+    if (orderStatus !== 'PENDING') {
+      const err = new Error(`Cannot retry payment for order status ${orderStatus || 'UNKNOWN'}`);
+      err.status = 409;
+      throw err;
+    }
+  } catch (error) {
+    if (error.status) {
+      throw error;
+    }
+    console.error('Get order internal failed before retry:', error.message);
   }
 
   const paid = await pool.query(
@@ -446,6 +504,29 @@ const processVnpayCallback = async ({ query, providerEventId }) => {
 
   const payment = paymentResult.rows[0];
 
+  let orderStatus = null;
+  try {
+    const order = await getOrderInternal(payment.order_id);
+    orderStatus = String(order?.status || '').toUpperCase();
+  } catch (error) {
+    console.error('Get order internal failed before callback process:', error.message);
+  }
+
+  if (orderStatus === 'CANCELLED') {
+    const cancelled = await pool.query(
+      `UPDATE payments
+       SET status = 'CANCELLED',
+           fail_reason = COALESCE(fail_reason, $1),
+           payment_url = NULL,
+           updated_at = NOW()
+       WHERE id = $2
+       RETURNING *`,
+      ['Order cancelled before payment confirmation', payment.id]
+    );
+
+    return { payment: cancelled.rows[0] || payment, ignored: true };
+  }
+
   if (providerEventId) {
     const existed = await pool.query(
       'SELECT id FROM payment_webhook_events WHERE provider_event_id = $1 LIMIT 1',
@@ -513,6 +594,7 @@ module.exports = {
   createVnpayPayment,
   createCashPayment,
   createPaymentByOrderEvent,
+  cancelPendingPaymentsByOrderEvent,
   retryVnpayPaymentByOrder,
   confirmPaymentPaid,
   cancelPayment,

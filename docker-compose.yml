@@ -127,6 +127,7 @@ services:
       PAYMENT_SERVICE_URL: http://payment-service:3005
       USER_SERVICE_URL: http://user-service:3001
       ORDER_INTERNAL_SECRET: ${ORDER_INTERNAL_SECRET:-order_internal_secret_dev}
+      ORDER_AUTO_CANCEL_MINUTES: 5
     depends_on:
       order_db:
         condition: service_healthy
@@ -225,6 +226,36 @@ services:
         condition: service_healthy
     volumes:
       - ./services/payment-service:/app
+      - /app/node_modules
+    networks:
+      - hdv-network
+
+  # API Gateway
+  api-gateway:
+    build: ./services/api-gateway
+    container_name: api-gateway
+    ports:
+      - "3006:3006"
+    environment:
+      PORT: 3006
+      USER_SERVICE_URL: http://user-service:3001
+      PRODUCT_SERVICE_URL: http://product-service:3002
+      ORDER_SERVICE_URL: http://order-service:3003
+      PAYMENT_SERVICE_URL: http://payment-service:3005
+      NOTIFICATION_SERVICE_URL: http://notification-service:3004
+    depends_on:
+      user-service:
+        condition: service_started
+      product-service:
+        condition: service_started
+      order-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      notification-service:
+        condition: service_started
+    volumes:
+      - ./services/api-gateway:/app
       - /app/node_modules
     networks:
       - hdv-network

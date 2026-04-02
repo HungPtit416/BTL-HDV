@@ -9,6 +9,7 @@ const healthRoutes = require('./routes/healthRoutes');
 const internalRoutes = require('./routes/internalRoutes');
 const cartRoutes = require('./routes/cartRoutes');
 const orderRoutes = require('./routes/orderRoutes');
+const { startOrderAutoCancelJob } = require('./jobs/orderAutoCancelJob');
 
 const app = express();
 
@@ -25,4 +26,5 @@ app.use(errorMiddleware);
 app.listen(PORT, () => {
   console.log(`Order Service running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/health`);
+  startOrderAutoCancelJob();
 });
