@@ -14,7 +14,7 @@ const safePositiveInt = (value, fallback) => {
 };
 
 const startOrderAutoCancelJob = () => {
-  const timeoutMinutes = safePositiveInt(ORDER_AUTO_CANCEL_MINUTES, 5);
+  const timeoutMinutes = safePositiveInt(ORDER_AUTO_CANCEL_MINUTES, 2);
   const intervalSeconds = safePositiveInt(ORDER_AUTO_CANCEL_INTERVAL_SECONDS, 60);
   const intervalMs = intervalSeconds * 1000;
 

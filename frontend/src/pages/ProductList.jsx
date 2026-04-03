@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { Heart, ShoppingCart, LogOut, User, Search, ClipboardList } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 
+const ORDER_SERVICE_BASE_URL = 'http://localhost:3003';
+
 const ProductList = () => {
     const navigate = useNavigate();
-    const { addToCart, cartItems } = useCart();
+    const location = useLocation();
+    const { addToCart, cartItems, clearCart } = useCart();
     const [products, setProducts] = useState([]);
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -48,6 +51,42 @@ const ProductList = () => {
         };
         fetchData();
     }, []);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const paymentStatus = String(params.get('payment_status') || '').toUpperCase();
+        const orderId = params.get('order_id');
+
+        if (!paymentStatus) return;
+
+        const alertKey = `payment_alert:${paymentStatus}:${orderId || ''}`;
+        if (sessionStorage.getItem(alertKey) === '1') {
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return;
+        }
+        sessionStorage.setItem(alertKey, '1');
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        if (paymentStatus === 'PAID') {
+            alert(`Đặt hàng thành công${orderId ? ` (Đơn #${orderId})` : ''}`);
+            clearCart();
+            localStorage.removeItem('cart');
+
+            const token = localStorage.getItem('token');
+            const savedUser = localStorage.getItem('user');
+            const currentUser = savedUser ? JSON.parse(savedUser) : null;
+            if (token && currentUser?.id) {
+                axios.delete(`${ORDER_SERVICE_BASE_URL}/api/cart/${currentUser.id}/clear`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                }).catch(() => null);
+            }
+            return;
+        }
+
+        if (paymentStatus === 'FAILED' || paymentStatus === 'CANCELLED') {
+            alert('Thanh toán chưa thành công. Đơn hàng của bạn đang ở trạng thái PENDING trong Order List.');
+        }
+    }, [location.search, clearCart]);
 
     const handleLogout = () => {
         localStorage.removeItem('token');

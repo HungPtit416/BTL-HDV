@@ -39,6 +39,9 @@ const ProductDetail = () => {
         fetchProduct();
     }, [id]);
 
+    const availableQuantity = Math.max(0, Number(product?.quantity) || 0);
+    const isOutOfStock = availableQuantity <= 0;
+
     const handleLogout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
@@ -47,11 +50,19 @@ const ProductDetail = () => {
     };
 
     const handleAddToCart = () => {
-        if (quantity > 0) {
+        if (isOutOfStock) {
+            alert('Sản phẩm hiện đang hết hàng.');
+            return;
+        }
+
+        if (quantity > 0 && quantity <= availableQuantity) {
             addToCart(product, quantity);
             alert(`Đã thêm ${quantity} sản phẩm vào giỏ hàng! 🛒`);
             setQuantity(1);
+            return;
         }
+
+        alert(`Chỉ còn ${availableQuantity} sản phẩm trong kho.`);
     };
 
     const toggleWishlist = () => {
@@ -145,7 +156,12 @@ const ProductDetail = () => {
                     <div className="space-y-6">
                         {/* Badges */}
                         <div className="flex gap-3 items-center">
-                            <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">✓ CÓ HÀNG</span>
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${isOutOfStock ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                                {isOutOfStock ? '✕ HẾT HÀNG' : '✓ CÓ HÀNG'}
+                            </span>
+                            <span className="bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-xs font-bold">
+                                Còn lại: {availableQuantity}
+                            </span>
                         </div>
 
                         {/* Title */}
@@ -186,6 +202,7 @@ const ProductDetail = () => {
                             <div className="flex items-center border border-gray-300 rounded-full bg-white">
                                 <button
                                     onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                                    disabled={isOutOfStock}
                                     className="w-12 h-12 flex items-center justify-center text-gray-600 hover:bg-orange-100 transition text-xl font-bold"
                                 >
                                     −
@@ -193,12 +210,18 @@ const ProductDetail = () => {
                                 <input
                                     type="number"
                                     min="1"
+                                    max={Math.max(1, availableQuantity)}
                                     value={quantity}
-                                    onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                                    onChange={(e) => {
+                                        const next = parseInt(e.target.value, 10) || 1;
+                                        setQuantity(Math.min(Math.max(1, next), Math.max(1, availableQuantity)));
+                                    }}
+                                    disabled={isOutOfStock}
                                     className="w-16 text-center border-0 focus:outline-none font-bold text-lg"
                                 />
                                 <button
-                                    onClick={() => setQuantity(quantity + 1)}
+                                    onClick={() => setQuantity(Math.min(Math.max(1, availableQuantity), quantity + 1))}
+                                    disabled={isOutOfStock || quantity >= availableQuantity}
                                     className="w-12 h-12 flex items-center justify-center text-gray-600 hover:bg-orange-100 transition text-xl font-bold"
                                 >
                                     +
@@ -210,6 +233,7 @@ const ProductDetail = () => {
                         <div className="flex gap-4 pt-6">
                             <button
                                 onClick={handleAddToCart}
+                                disabled={isOutOfStock}
                                 className="flex-1 bg-orange-600 text-white py-4 rounded-2xl font-black text-lg hover:bg-orange-700 transition-all shadow-xl shadow-orange-200 flex items-center justify-center gap-2 transform hover:scale-105"
                             >
                                 <ShoppingCart size={24} /> THÊM VÀO GIỎ

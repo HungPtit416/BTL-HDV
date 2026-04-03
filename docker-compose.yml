@@ -127,7 +127,7 @@ services:
       PAYMENT_SERVICE_URL: http://payment-service:3005
       USER_SERVICE_URL: http://user-service:3001
       ORDER_INTERNAL_SECRET: ${ORDER_INTERNAL_SECRET:-order_internal_secret_dev}
-      ORDER_AUTO_CANCEL_MINUTES: 5
+      ORDER_AUTO_CANCEL_MINUTES: 2
     depends_on:
       order_db:
         condition: service_healthy

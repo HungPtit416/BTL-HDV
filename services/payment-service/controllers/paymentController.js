@@ -288,9 +288,7 @@ const vnpayReturn = async (req, res) => {
 
     const status = result?.payment?.status || 'UNKNOWN';
     const orderId = String(result?.payment?.order_id || extractOrderIdFromTxnRef(req.query?.vnp_TxnRef));
-    const redirectUrl = orderId
-      ? `${FRONTEND_RETURN_URL}/orders/${encodeURIComponent(orderId)}?payment_status=${encodeURIComponent(status)}`
-      : `${FRONTEND_RETURN_URL}?payment_status=${encodeURIComponent(status)}`;
+    const redirectUrl = `${FRONTEND_RETURN_URL}?payment_status=${encodeURIComponent(status)}&order_id=${encodeURIComponent(orderId || '')}`;
 
     if (result.ignored) {
       return res.redirect(302, redirectUrl);
@@ -306,9 +304,7 @@ const vnpayReturn = async (req, res) => {
       transactionStatus: req.query?.vnp_TransactionStatus,
     });
     const orderId = extractOrderIdFromTxnRef(req.query?.vnp_TxnRef);
-    const failedRedirectUrl = orderId
-      ? `${FRONTEND_RETURN_URL}/orders/${encodeURIComponent(orderId)}?payment_status=FAILED&error=${encodeURIComponent(error.message || 'Payment failed')}`
-      : `${FRONTEND_RETURN_URL}?payment_status=FAILED&error=${encodeURIComponent(error.message || 'Payment failed')}`;
+    const failedRedirectUrl = `${FRONTEND_RETURN_URL}?payment_status=FAILED&order_id=${encodeURIComponent(orderId || '')}&error=${encodeURIComponent(error.message || 'Payment failed')}`;
     return res.redirect(302, failedRedirectUrl);
   }
 };
