@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, Link, useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { CheckCircle, AlertCircle, Clock, Mail, Phone } from 'lucide-react';
+import { useCart } from '../context/CartContext';
 
 const OrderSuccess = () => {
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
+    const { clearCart } = useCart();
     const [orderStatus, setOrderStatus] = useState('loading'); // loading, success, failed, pending
     const [orderData, setOrderData] = useState(null);
 
@@ -21,24 +22,11 @@ const OrderSuccess = () => {
                 }
 
                 if (vnpCode === '00') {
-                    // Thanh toán thành công
-                    try {
-                        // Gọi backend xác nhận thanh toán
-                        const res = await axios.post(
-                            `http://localhost:3001/api/payments/verify/${orderId}`,
-                            { vnpCode },
-                            { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
-                        );
-
-                        if (res.data.success) {
-                            setOrderData(res.data.data);
-                            setOrderStatus('success');
-                            localStorage.removeItem('cart');
-                        }
-                    } catch (err) {
-                        console.error("Lỗi xác nhận thanh toán:", err);
-                        setOrderStatus('pending');
-                    }
+                    // Thanh toán thành công: clear giỏ tại context + localStorage
+                    clearCart();
+                    localStorage.removeItem('cart');
+                    setOrderData({ id: orderId });
+                    setOrderStatus('success');
                 } else {
                     setOrderStatus('failed');
                 }
@@ -55,7 +43,7 @@ const OrderSuccess = () => {
         } else {
             verifyPayment();
         }
-    }, [searchParams]);
+    }, [searchParams, clearCart]);
 
     if (orderStatus === 'loading') {
         return (

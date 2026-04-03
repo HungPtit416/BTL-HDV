@@ -5,11 +5,12 @@ import { LogOut, User, ChevronLeft, MapPin, Phone, DollarSign } from 'lucide-rea
 import { useCart } from '../context/CartContext';
 
 const ORDER_SERVICE_BASE_URL = 'http://localhost:3003';
+const PAYMENT_SERVICE_BASE_URL = 'http://localhost:3005';
 const USER_SERVICE_BASE_URL = 'http://localhost:3001';
 
 const Checkout = () => {
     const navigate = useNavigate();
-    const { cartItems, totalPrice, clearCart } = useCart();
+    const { cartItems, totalPrice, clearCart, isHydrated } = useCart();
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(false);
 
@@ -37,11 +38,11 @@ const Checkout = () => {
             }));
         }
 
-        if (!loading && cartItems.length === 0) {
+        if (isHydrated && !loading && cartItems.length === 0) {
             alert("Giỏ hàng trống!");
             navigate('/cart');
         }
-    }, [cartItems, navigate, loading]);
+    }, [cartItems, navigate, loading, isHydrated]);
 
     const handleLogout = () => {
         localStorage.removeItem('token');
@@ -73,6 +74,36 @@ const Checkout = () => {
             const authConfig = {
                 headers: { Authorization: `Bearer ${token}` }
             };
+
+            // VNPay: nếu đã có đơn PENDING cùng số tiền thì tái dùng đơn đó thay vì tạo đơn mới
+            if (formData.paymentMethod === 'vnpay') {
+                const ordersRes = await axios.get(`${ORDER_SERVICE_BASE_URL}/api/orders`, authConfig);
+                const orders = ordersRes.data?.data || [];
+                const reusablePendingOrder = orders.find((order) => (
+                    String(order.status || '').toUpperCase() === 'PENDING'
+                    && Number(order.payment_method_id) === 1
+                    && Number(order.final_amount) === Number(totalPrice)
+                ));
+
+                if (reusablePendingOrder?.id) {
+                    try {
+                        const retryRes = await axios.post(
+                            `${PAYMENT_SERVICE_BASE_URL}/api/payments/order/${reusablePendingOrder.id}/retry`,
+                            { description: `Thanh toan don hang #${reusablePendingOrder.id}` },
+                            authConfig
+                        );
+                        const retryPaymentUrl = retryRes.data?.data?.payment_url;
+                        if (retryPaymentUrl) {
+                            window.location.href = retryPaymentUrl;
+                            return;
+                        }
+                    } catch (retryError) {
+                        alert('Đã có đơn hàng chờ thanh toán nhưng không tạo lại được link thanh toán. Vui lòng thử lại sau.');
+                        setLoading(false);
+                        return;
+                    }
+                }
+            }
 
             const fullAddress = [formData.address, formData.ward, formData.district, formData.city]
                 .filter(Boolean)
@@ -106,7 +137,7 @@ const Checkout = () => {
             const orderRes = await axios.post(`${ORDER_SERVICE_BASE_URL}/api/orders/checkout`, {
                 user_id: user.id,
                 shipping_address_id: shippingAddressId,
-                payment_method: formData.paymentMethod === 'cod' ? 'CASH' : 'QR'
+                payment_method: 'QR'
             }, authConfig);
 
             const orderId = orderRes.data.data?.order?.id;
@@ -118,18 +149,12 @@ const Checkout = () => {
                 return;
             }
 
-            // 3) Redirect VNPay hoặc hoàn tất COD
-            if (formData.paymentMethod === 'vnpay') {
-                if (paymentUrl) {
-                    window.location.href = paymentUrl;
-                } else {
-                    alert("Lỗi tạo link thanh toán!");
-                    setLoading(false);
-                }
+            // 3) VNPay only
+            if (paymentUrl) {
+                window.location.href = paymentUrl;
             } else {
-                clearCart();
-                alert("Đặt hàng thành công!");
-                navigate('/', { replace: true });
+                alert("Lỗi tạo link thanh toán!");
+                setLoading(false);
             }
         } catch (error) {
             console.error("Lỗi:", error);
@@ -290,19 +315,7 @@ const Checkout = () => {
                                             onChange={handleChange}
                                             className="w-4 h-4"
                                         />
-                                        <span className="ml-3 font-bold text-gray-900">VNPay</span>
-                                    </label>
-
-                                    <label className="flex items-center p-4 border-2 border-gray-300 rounded-xl cursor-pointer hover:border-orange-600 transition" style={{ borderColor: formData.paymentMethod === 'cod' ? '#ff6b00' : '#e5e7eb' }}>
-                                        <input
-                                            type="radio"
-                                            name="paymentMethod"
-                                            value="cod"
-                                            checked={formData.paymentMethod === 'cod'}
-                                            onChange={handleChange}
-                                            className="w-4 h-4"
-                                        />
-                                        <span className="ml-3 font-bold text-gray-900">COD</span>
+                                        <span className="ml-3 font-bold text-gray-900">Thanh toán qua VNPay</span>
                                     </label>
                                 </div>
                             </div>

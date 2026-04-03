@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
+import { useCart } from '../context/CartContext';
 
 const ORDER_SERVICE_BASE_URL = 'http://localhost:3003';
 const USER_SERVICE_BASE_URL = 'http://localhost:3001';
@@ -11,6 +12,7 @@ const OrderDetail = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { clearCart } = useCart();
   const [loading, setLoading] = useState(true);
   const [order, setOrder] = useState(null);
   const [shippingAddress, setShippingAddress] = useState(null);
@@ -52,6 +54,31 @@ const OrderDetail = () => {
     fetchOrder();
   }, [id, navigate]);
 
+  useEffect(() => {
+    const paymentStatus = String(searchParams.get('payment_status') || '').toUpperCase();
+    if (paymentStatus !== 'PAID') return;
+
+    const syncClearCart = async () => {
+      clearCart();
+      localStorage.removeItem('cart');
+
+      try {
+        const token = localStorage.getItem('token');
+        const savedUser = localStorage.getItem('user');
+        const user = savedUser ? JSON.parse(savedUser) : null;
+        if (token && user?.id) {
+          await axios.delete(`${ORDER_SERVICE_BASE_URL}/api/cart/${user.id}/clear`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        }
+      } catch {
+        // Ignore server clear-cart failure; local cart has already been cleared.
+      }
+    };
+
+    syncClearCart();
+  }, [searchParams, clearCart]);
+
   if (loading) {
     return <div className="min-h-screen flex items-center justify-center">Đang tải đơn hàng...</div>;
   }
@@ -84,7 +111,12 @@ const OrderDetail = () => {
             <h1 className="text-2xl md:text-3xl font-black text-blue-900">Đơn hàng #{order.id}</h1>
             <p className="text-gray-500">Trạng thái: <span className="font-bold text-orange-600">{order.status}</span></p>
           </div>
-          <Link to="/" className="text-sm font-bold text-orange-600">Về trang chủ</Link>
+          <a
+            href="/"
+            className="text-sm font-bold text-orange-600 hover:text-orange-700"
+          >
+            Về trang chủ
+          </a>
         </div>
 
         {paymentStatus && (

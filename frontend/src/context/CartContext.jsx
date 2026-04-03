@@ -5,6 +5,7 @@ const CartContext = createContext();
 export const CartProvider = ({ children }) => {
     const [cartItems, setCartItems] = useState([]);
     const [totalPrice, setTotalPrice] = useState(0);
+    const [isHydrated, setIsHydrated] = useState(false);
 
     // Load cart từ localStorage khi component mount
     useEffect(() => {
@@ -12,13 +13,15 @@ export const CartProvider = ({ children }) => {
         if (savedCart) {
             setCartItems(JSON.parse(savedCart));
         }
+        setIsHydrated(true);
     }, []);
 
     // Cập nhật localStorage mỗi khi cart thay đổi
     useEffect(() => {
+        if (!isHydrated) return;
         localStorage.setItem('cart', JSON.stringify(cartItems));
         calculateTotal();
-    }, [cartItems]);
+    }, [cartItems, isHydrated]);
 
     const calculateTotal = () => {
         const total = cartItems.reduce((sum, item) => {
@@ -71,6 +74,7 @@ export const CartProvider = ({ children }) => {
         <CartContext.Provider value={{
             cartItems,
             totalPrice,
+            isHydrated,
             addToCart,
             updateQuantity,
             removeFromCart,

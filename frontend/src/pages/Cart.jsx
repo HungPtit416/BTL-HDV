@@ -117,7 +117,19 @@ const Cart = () => {
                                                     >
                                                         <Minus size={18} className="text-gray-600" />
                                                     </button>
-                                                    <span className="w-12 text-center font-bold">{item.quantity}</span>
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        value={item.quantity}
+                                                        onChange={(e) => {
+                                                            const raw = e.target.value;
+                                                            if (raw === '') return;
+                                                            const next = Number(raw);
+                                                            if (!Number.isInteger(next)) return;
+                                                            updateQuantity(item.id, Math.max(1, next));
+                                                        }}
+                                                        className="w-14 text-center font-bold bg-transparent border-0 focus:outline-none"
+                                                    />
                                                     <button
                                                         onClick={() => updateQuantity(item.id, item.quantity + 1)}
                                                         className="w-10 h-10 flex items-center justify-center hover:bg-orange-100 transition"

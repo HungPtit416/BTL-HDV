@@ -107,9 +107,11 @@ const updateCartItem = async (req, res) => {
   try {
     const itemId = toPositiveInt(req.params.itemId);
     const quantity = toNonNegativeInt(req.body.quantity);
+    const delta = Number(req.body.delta);
+    const action = String(req.body.action || '').toLowerCase();
 
-    if (!itemId || quantity === null) {
-      return res.status(400).json({ success: false, error: 'itemId must be positive and quantity must be a non-negative integer' });
+    if (!itemId) {
+      return res.status(400).json({ success: false, error: 'itemId must be a positive integer' });
     }
 
     const item = await getCartItemOwner(itemId);
@@ -121,12 +123,36 @@ const updateCartItem = async (req, res) => {
       return res.status(403).json({ success: false, error: 'You are not allowed to modify this cart item' });
     }
 
-    if (quantity === 0) {
+    let nextQuantity = null;
+
+    // Mode 1: set absolute quantity, e.g. { quantity: 5 }
+    if (quantity !== null) {
+      nextQuantity = quantity;
+    }
+
+    // Mode 2: change by delta, e.g. { delta: 1 } or { delta: -1 }
+    if (nextQuantity === null && Number.isInteger(delta) && delta !== 0) {
+      nextQuantity = Number(item.quantity) + delta;
+    }
+
+    // Mode 3: semantic action, e.g. { action: "increase" } / { action: "decrease" }
+    if (nextQuantity === null && (action === 'increase' || action === 'decrease')) {
+      nextQuantity = Number(item.quantity) + (action === 'increase' ? 1 : -1);
+    }
+
+    if (nextQuantity === null) {
+      return res.status(400).json({
+        success: false,
+        error: 'Provide quantity (>=0), or delta (+/- integer), or action (increase/decrease)',
+      });
+    }
+
+    if (nextQuantity <= 0) {
       await pool.query('DELETE FROM cart_items WHERE id = $1', [itemId]);
       return res.json({ success: true, message: 'Cart item removed because quantity is 0' });
     }
 
-    const updated = await pool.query('UPDATE cart_items SET quantity = $1 WHERE id = $2 RETURNING *', [quantity, itemId]);
+    const updated = await pool.query('UPDATE cart_items SET quantity = $1 WHERE id = $2 RETURNING *', [nextQuantity, itemId]);
 
     if (updated.rows.length === 0) {
       return res.status(404).json({ success: false, error: 'Cart item not found' });
