@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
+
+// Import Routes
 const userRoutes = require('./routes/userRoutes');
 const articleRoutes = require('./routes/articleRoutes');
 const wishlistRoutes = require('./routes/wishlistRoutes');
@@ -11,24 +13,40 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-app.get('/health', (req, res) => res.json({
-  status: 'User Service is running',
-  timestamp: new Date().toISOString()
-}));
+// --- CẦU NỐI VỚI API GATEWAY ---
+// Middleware này nhặt các Header x-user-* và gán vào req.user
+app.use((req, res, next) => {
+  const userId = req.headers['x-user-id'];
+  const userRole = req.headers['x-user-role'];
+  const userEmail = req.headers['x-user-email'];
 
-app.use('/api/users', userRoutes);      // Auth, Profile
-app.use('/api/articles', articleRoutes); // Tin tức, bài viết
-app.use('/api/wishlist', wishlistRoutes); // Yêu thích
+  if (userId) {
+    req.user = {
+      id: Number(userId), // Quan trọng: ép kiểu Number để khớp với ID trong DB
+      role: userRole,
+      email: userEmail
+    };
+  }
+  next();
+});
 
+// Health check
+app.get('/health', (req, res) => res.json({ status: 'User Service OK' }));
+
+// Gắn các Routes
+app.use('/api/users', userRoutes);
+app.use('/api/articles', articleRoutes);
+app.use('/api/wishlist', wishlistRoutes);
+
+// Error Handling
 app.use((err, req, res, next) => {
-  console.error('SERVER ERROR LOG:', err.stack);
+  console.error('SERVER ERROR:', err.message);
   res.status(err.status || 500).json({
     success: false,
-    error: err.message || 'Internal Server Error'
+    error: err.message || 'Lỗi hệ thống nội bộ'
   });
 });
 
 app.listen(PORT, () => {
-  console.log(` User Service running on http://localhost:${PORT}`);
-  console.log(` Health check: http://localhost:${PORT}/health`);
+  console.log(`🚀 User Service running on port ${PORT}`);
 });
